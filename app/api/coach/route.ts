@@ -4,8 +4,6 @@ const client = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
-const MODEL = "gpt-4.1-mini";
-
 function clean(text: string) {
   return text
     .replace(/```json/g, "")
@@ -14,419 +12,212 @@ function clean(text: string) {
     .trim();
 }
 
-async function ask(prompt: string, temperature = 0.75) {
-  if (!client) return "";
-
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    temperature,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  return clean(response.choices[0]?.message?.content || "");
-}
-
-function safeParse(text: string) {
-  try {
-    return JSON.parse(clean(text));
-  } catch {
-    return null;
-  }
-}
-
-function randomSeed() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function fallback(title: string) {
-  return {
-    steps: ["Demo-läge", "Ingen API-key hittades"],
-    files: {
-      "index.html": `
-<!DOCTYPE html>
-<html>
-<head>
-<title>Demo</title>
-<style>
-body{font-family:Arial;padding:60px;background:#f7f3ea;color:#111}
-h1{font-size:52px}
-button{padding:14px 22px;border-radius:999px;border:none;background:#22c55e;color:white;font-weight:bold}
-</style>
-</head>
-<body>
-<h1>Smart tjänst för ${title}</h1>
-<p>Demo-preview. Lägg in OPENAI_API_KEY i .env.local för riktig AI.</p>
-<button>Testa gratis</button>
-</body>
-</html>
-`,
-    },
-  };
-}
-
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { problem, editWebsite, currentHtml, instruction } = body;
 
-    const title =
-      typeof problem === "string"
-        ? problem
-        : problem?.title || "ett vardagsproblem";
+    const {
+      problem,
+      template,
+      style,
+      audience,
+      editWebsite,
+      currentHtml,
+      instruction,
+    } = body;
 
-    if (!client) return Response.json(fallback(title));
+    if (!client) {
+      return Response.json({
+        steps: ["Demo mode"],
+        files: {
+          "index.html": "<h1>Missing OpenAI API key</h1>",
+        },
+      });
+    }
 
     if (editWebsite) {
-      const updatedRaw = await ask(`
-Du är en Lovable-liknande AI website editor.
+      const prompt = `
+You are an elite AI website editor.
 
-Användaren vill ändra:
+User change:
 "${instruction}"
 
-Nuvarande HTML:
+Current HTML:
 ${currentHtml}
 
-Gör ändringen tydligt. Om användaren ber om ny layout, gör en stor layoutförändring.
-
-Returnera endast JSON:
+Return ONLY valid JSON:
 {
-  "steps": [
-    "Läser ändringen",
-    "Planerar om layouten",
-    "Uppdaterar designen",
-    "Bygger ny preview"
-  ],
+  "steps": ["Understanding request", "Updating website", "Fixing layout", "Rendering preview"],
   "files": {
-    "index.html": "komplett uppdaterad HTML"
+    "index.html": "complete updated HTML"
   }
 }
 
-Regler:
-- Ingen markdown.
-- Returnera komplett HTML.
-- CSS ska ligga i <style>.
-- Behåll det som inte behöver ändras.
-- Sidan ska kännas som riktig startup, inte analys.
-`, 0.7);
+STRICT RULES:
+- Return only JSON.
+- No markdown.
+- Complete HTML document.
+- CSS inside <style>.
+- No external images.
+- No external scripts.
 
-      const updated = safeParse(updatedRaw);
+CRITICAL PREVIEW SIZE RULES:
+- The website must fill the iframe naturally.
+- Do NOT use transform: scale().
+- Do NOT use zoom.
+- Do NOT set body to display:flex with place-items:center for the whole site.
+- Do NOT make the entire site look like a centered card/mockup.
+- Do NOT put the whole page inside a small max-width wrapper.
+- Body must be width: 100%; min-height: 100vh; margin: 0.
+- Sections can have max-width, but the overall page background and layout must span full width.
+- Use full-width sections.
+- The page must scroll vertically if content is long.
+`;
+
+      const res = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        temperature: 0.55,
+        messages: [{ role: "user", content: prompt }],
+      });
 
       return Response.json(
-        updated || {
-          steps: ["Kunde inte tolka AI-svar"],
-          files: { "index.html": currentHtml },
-        }
+        JSON.parse(clean(res.choices[0].message.content || "{}"))
       );
     }
 
-    const seed = randomSeed();
+    const prompt = `
+You are an elite AI website builder, product designer, frontend engineer and conversion copywriter.
 
-    const mutationRaw = await ask(`
-Du är en creative director för AI website generation.
+Build a premium, unique, production-quality website.
 
-Skapa en unik mutation blueprint för en hemsida som löser:
-"${title}"
+Business idea comes from this user problem:
+"${problem}"
 
-Seed:
-${seed}
+Template:
+"${template}"
 
-Välj INTE samma standard SaaS-layout varje gång.
+Preferred visual style:
+"${style}"
 
-Du MÅSTE välja olika kombinationer från dessa:
+Target audience:
+"${audience}"
 
-DESIGNSTIL:
-- minimal-tech
-- bold-startup
-- luxury-dark
-- playful-modern
-- futuristic-ai
-- editorial-premium
-- finance-clean
-- consumer-app
-- agency-polished
-- neon-dashboard
+IMPORTANT:
+The website is NOT for "Problem to Profit AI".
+The website is for the NEW business that solves the user's problem.
+Do not explain the idea. Build the company's real public website.
 
-HERO-TYP:
-- split-screen
-- centered-hero
-- dashboard-first
-- editorial-story
-- big-visual-left
-- floating-cards
-- product-demo
-- pricing-first
-- problem-solution
-- cinematic-dark
-
-LAYOUT-RYTM:
-- asymmetric-grid
-- stacked-cards
-- magazine-layout
-- dashboard-layout
-- timeline-flow
-- alternating-sections
-- Bento-grid
-- full-width-blocks
-- compact-app-layout
-- layered-panels
-
-SEKTIONER:
-Välj 6–8 unika sektionstyper från:
-- social-proof-strip
-- pain-moment
-- before-after
-- feature-bento
-- interactive-demo
-- workflow-timeline
-- testimonial-wall
-- pricing-comparison
-- founder-note
-- use-cases
-- guarantee
-- faq-accordion
-- final-cta
-- metrics-row
-- integration-grid
-- customer-story
-- security-trust
-- onboarding-steps
-
-Returnera endast JSON:
+Return ONLY valid JSON:
 {
-  "seed": "${seed}",
-  "designStyle": "",
-  "heroType": "",
-  "layoutRhythm": "",
-  "sectionTypes": [],
-  "visualMotif": "",
-  "colorPalette": {
-    "background": "",
-    "surface": "",
-    "text": "",
-    "muted": "",
-    "primary": "",
-    "accent": ""
-  },
-  "shapeLanguage": "",
-  "motionFeel": "",
-  "brandPersonality": "",
-  "mustLookDifferentBecause": ""
-}
-`, 1);
-
-    const mutation = safeParse(mutationRaw);
-
-    const brandRaw = await ask(`
-Du är en senior brand strategist.
-
-Skapa ett riktigt startup-varumärke baserat på denna mutation.
-
-Problem/kontext:
-${title}
-
-Mutation blueprint:
-${JSON.stringify(mutation)}
-
-Returnera endast JSON:
-{
-  "brandName": "",
-  "category": "",
-  "oneLinePromise": "",
-  "targetVisitor": "",
-  "emotionalAngle": "",
-  "tone": "",
-  "positioning": "",
-  "avoid": ["affärsidé", "analys", "problem", "MVP", "intäktsmodell"]
-}
-
-Regler:
-- Det ska kännas som ett riktigt bolag.
-- Inte som en analys.
-- Namnet ska vara kort och brandable.
-`, 0.9);
-
-    const brand = safeParse(brandRaw);
-
-    const copyRaw = await ask(`
-Du är en premium conversion copywriter.
-
-Skriv all copy för hemsidan.
-
-Brand:
-${JSON.stringify(brand)}
-
-Mutation:
-${JSON.stringify(mutation)}
-
-Kontext:
-${title}
-
-Returnera endast JSON:
-{
-  "nav": {
-    "links": [],
-    "cta": ""
-  },
-  "hero": {
-    "eyebrow": "",
-    "headline": "",
-    "subheadline": "",
-    "ctaPrimary": "",
-    "ctaSecondary": ""
-  },
-  "sections": [
-    {
-      "type": "",
-      "headline": "",
-      "body": "",
-      "items": [
-        {"title": "", "text": ""}
-      ]
-    }
+  "steps": [
+    "Understanding the business",
+    "Creating brand direction",
+    "Designing the layout",
+    "Writing conversion copy",
+    "Building the website",
+    "Polishing the final preview"
   ],
-  "pricing": {
-    "headline": "",
-    "body": "",
-    "price": "",
-    "cta": ""
-  },
-  "faq": [
-    {"q": "", "a": ""}
-  ],
-  "finalCta": {
-    "headline": "",
-    "body": "",
-    "cta": ""
+  "files": {
+    "index.html": "complete HTML document with CSS in style tag"
   }
 }
 
-Regler:
-- Prata direkt till besökaren.
-- Sälj resultatet, inte tekniken.
-- Använd inte orden: affärsidé, analys, MVP, intäktsmodell, målgrupp.
-- Undvik generiska fraser.
-- Copy ska matcha mutationens stil.
-`, 0.88);
+QUALITY RULES:
+- Complete HTML document.
+- CSS inside <style>.
+- No markdown.
+- No external images.
+- No external scripts.
+- Fully responsive.
+- Premium startup feel.
+- Strong visual hierarchy.
+- Beautiful hero section.
+- Real brand name.
+- Real navigation.
+- Clear CTA.
+- CSS-based product mockup.
+- Social proof.
+- Features.
+- How it works.
+- Pricing.
+- FAQ.
+- Footer.
+- Avoid generic text.
+- Avoid boring gray SaaS layout.
+- Make it feel like a real funded startup.
+- Use specific copy, not vague copy.
+- Do not use emojis.
+- Do not mention: business idea, analysis, MVP, revenue model, target audience, problem.
+- Do not write about building websites.
+- Do not mention Problem to Profit AI.
 
-    const copy = safeParse(copyRaw);
+CRITICAL PREVIEW SIZE RULES:
+- The generated website must fill the iframe naturally.
+- The page must look like a normal full website, not a tiny centered preview.
+- Do NOT use transform: scale().
+- Do NOT use zoom.
+- Do NOT use CSS that shrinks the whole website.
+- Do NOT set body to display:flex with align-items:center and justify-content:center for the entire page.
+- Do NOT wrap the whole page in a small card.
+- Do NOT make the entire website max-width: 900px or 1100px.
+- Body CSS must include: margin: 0; width: 100%; min-height: 100vh;
+- Use full-width backgrounds and full-width sections.
+- Inner content can use max-width: 1200px or 1280px, but sections must span full width.
+- The page must scroll vertically when content is longer than the viewport.
+- Hero should take significant space, but not shrink the entire site.
+- The iframe should show a real full-size website.
 
-    const htmlRaw = await ask(`
-Du är en senior frontend engineer, designer och creative technologist.
+GOOD STRUCTURE:
+<body>
+  <nav>...</nav>
+  <main>
+    <section class="hero">...</section>
+    <section>...</section>
+    <section>...</section>
+  </main>
+  <footer>...</footer>
+</body>
 
-Bygg en komplett HTML-hemsida utifrån mutation blueprint.
+BAD STRUCTURE:
+<body>
+  <div class="tiny-card">
+    entire website here
+  </div>
+</body>
 
-Mutation blueprint:
-${JSON.stringify(mutation)}
+Template behavior:
+- SaaS Landing Page: product dashboard mockup, pricing, features, integrations.
+- Mobile App: phone mockup, app benefits, reviews, app-style CTA.
+- Agency Website: services, process, case-study feel, consultation CTA.
+- Marketplace: buyer/seller sections, trust, categories, matching flow.
+- AI Tool: automation dashboard, prompt/workflow UI, productivity benefits.
+- Local Business: local trust, service area, reviews, booking/contact CTA.
 
-Brand:
-${JSON.stringify(brand)}
+Design behavior:
+- If style says luxury: dark, elegant, premium, strong spacing.
+- If style says minimal: clean, white space, calm colors.
+- If style says playful: rounded cards, softer colors, friendly copy.
+- If style says futuristic: gradients, glow, dashboard vibe.
+- If style says Apple: minimal, large type, lots of whitespace.
+- If style says Stripe/Linear: polished SaaS, gradients, product UI.
 
-Copy:
-${JSON.stringify(copy)}
+Make the page visually impressive and full-size.
+`;
 
-KRITISKT:
-Du får INTE bygga en vanlig standard SaaS-sida varje gång.
-Du MÅSTE följa:
-- designStyle
-- heroType
-- layoutRhythm
-- sectionTypes
-- visualMotif
-- colorPalette
-- shapeLanguage
-
-Om heroType är dashboard-first: visa dashboard/mockup direkt i hero.
-Om heroType är editorial-story: gör mer story/magazine.
-Om heroType är cinematic-dark: gör mörk filmisk landing.
-Om layoutRhythm är Bento-grid: använd bento cards.
-Om layoutRhythm är timeline-flow: använd timeline.
-Om layoutRhythm är asymmetric-grid: gör asymmetrisk layout.
-
-Returnera endast komplett HTML.
-CSS ska ligga i <style>.
-Ingen markdown.
-Inga externa bilder.
-Inga externa scripts.
-Inga emojis.
-Responsiv.
-Skapa CSS-baserade visuella element/mockups.
-Måste innehålla nav, hero, valda sektioner, pricing, faq, final CTA.
-Använd inte orden: affärsidé, analys, MVP, intäktsmodell, målgrupp.
-`, 0.95);
-
-    const critiqueRaw = await ask(`
-Du är en brutal website quality reviewer.
-
-Granska denna HTML:
-${htmlRaw}
-
-Mutation som skulle följas:
-${JSON.stringify(mutation)}
-
-Returnera endast JSON:
-{
-  "score": 1,
-  "issues": [],
-  "fixes": [],
-  "isTooGeneric": true,
-  "mutationFollowed": true
-}
-
-Var hård:
-- Ser den för mycket ut som en standard template?
-- Följde den heroType?
-- Följde den layoutRhythm?
-- Är den unik?
-- Är den premium?
-`, 0.35);
-
-    const critique = safeParse(critiqueRaw);
-
-    const finalHtmlRaw = await ask(`
-Du är senior designer och frontend engineer.
-
-Förbättra HTML:n baserat på kritiken och gör den mer unik.
-
-HTML:
-${htmlRaw}
-
-Kritik:
-${JSON.stringify(critique)}
-
-Mutation blueprint:
-${JSON.stringify(mutation)}
-
-KRAV:
-- Om sidan är för generisk, ändra layouten tydligt.
-- Följ heroType och layoutRhythm hårdare.
-- Gör visuella element mer unika.
-- Förbättra spacing, hierarchy, cards, CTA och mockup.
-- Returnera endast komplett HTML.
-- CSS i <style>.
-- Ingen markdown.
-`, 0.75);
-
-    return Response.json({
-      steps: [
-        "Analyserar produkten",
-        "Skapar mutation blueprint",
-        "Väljer designstil",
-        "Väljer hero-typ",
-        "Planerar unik layout",
-        "Skriver copy",
-        "Bygger kod",
-        "Granskar kvalitet",
-        "Muterar designen",
-      ],
-      files: {
-        "index.html": finalHtmlRaw || htmlRaw,
-      },
+    const res = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      temperature: 0.9,
+      messages: [{ role: "user", content: prompt }],
     });
-  } catch (error: any) {
+
+    return Response.json(
+      JSON.parse(clean(res.choices[0].message.content || "{}"))
+    );
+  } catch (e: any) {
     return Response.json({
-      steps: ["AI error", error.message],
+      steps: ["Error"],
       files: {
-        "index.html": `<h1>Något gick fel</h1><p>${error.message}</p>`,
+        "index.html": `<h1>Error</h1><p>${e.message}</p>`,
       },
     });
   }

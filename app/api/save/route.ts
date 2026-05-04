@@ -8,7 +8,7 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { html } = await req.json();
+    const { html, name, problem, template } = await req.json();
 
     if (!html) {
       return NextResponse.json({ error: "No html received" }, { status: 400 });
@@ -19,6 +19,9 @@ export async function POST(req: Request) {
     const { error } = await supabase.from("sites").insert({
       id,
       html,
+      name: name || "Untitled project",
+      problem: problem || "",
+      template: template || "",
     });
 
     if (error) {
