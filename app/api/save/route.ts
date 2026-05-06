@@ -12,6 +12,16 @@ const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
 const supabaseAuth = createClient(supabaseUrl, publishableKey);
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
+export async function GET() {
+  return NextResponse.json({
+    route: "save",
+    version: "token-auth-no-cookies-v2",
+    publishableStartsWith: publishableKey.slice(0, 18),
+    serviceStartsWith: serviceRoleKey.slice(0, 18),
+    serviceHasSpace: /\s/.test(serviceRoleKey),
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get("authorization") || "";
