@@ -19,10 +19,9 @@ async function getUser() {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          cookieStore.set(name, value, options);
-        });
+      setAll() {
+        // Do nothing here.
+        // This prevents old broken Supabase cookie/header values from crashing publish.
       },
     },
   });
