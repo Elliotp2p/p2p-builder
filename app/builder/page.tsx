@@ -1,14 +1,7 @@
 "use client";
 
+import { createBrowserClient } from "@supabase/ssr";
 import { useEffect, useRef, useState } from "react";
-
-const problems = [
-  "AI receptionist för tandläkare",
-  "App som planerar veckans mat",
-  "Marketplace för lokala tränare",
-  "AI lead finder för småföretag",
-  "Smart städplanerare för hem",
-];
 
 const templates = [
   "SaaS Landing Page",
@@ -17,6 +10,23 @@ const templates = [
   "Marketplace",
   "AI Tool",
   "Local Business",
+];
+
+const styles = [
+  "premium modern",
+  "luxury dark",
+  "minimal Apple style",
+  "Stripe/Linear SaaS",
+  "futuristic neon",
+  "playful friendly",
+];
+
+const starters = [
+  "AI receptionist för tandläkare",
+  "App som planerar veckans mat",
+  "Marketplace för lokala tränare",
+  "AI lead finder för småföretag",
+  "Smart städplanerare för hem",
 ];
 
 type ChatMessage = {
@@ -33,24 +43,36 @@ type Project = {
 };
 
 export default function BuilderPage() {
-  const [problem, setProblem] = useState(problems[0]);
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  );
+
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [userEmail, setUserEmail] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginStatus, setLoginStatus] = useState("");
+
+  const [problem, setProblem] = useState("");
   const [template, setTemplate] = useState(templates[0]);
-  const [style, setStyle] = useState("premium modern");
+  const [style, setStyle] = useState(styles[0]);
   const [audience, setAudience] = useState("kunder som vill spara tid");
 
-  const [html, setHtml] = useState("");
+  const [started, setStarted] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [files, setFiles] = useState<Record<string, string>>({});
+  const [activeFile, setActiveFile] = useState("index.html");
+  const html = files[activeFile] || files["index.html"] || "";
+
   const [link, setLink] = useState("");
   const [status, setStatus] = useState("Ready");
   const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [showSettings, setShowSettings] = useState(true);
 
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "ai",
-      text: "What should we build today?",
-    },
+    { role: "ai", text: "Describe what you want to build and I’ll create the site." },
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -58,30 +80,58 @@ export default function BuilderPage() {
   const [scale, setScale] = useState(0.6);
 
   const previewHtml = html
-    ? html.replace(
-        "</head>",
-        `<style>
-          html, body {
-            width: 1440px !important;
-            min-height: 100vh !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            transform: none !important;
-            zoom: 1 !important;
-          }
-          body {
-            display: block !important;
-          }
-          body > * {
-            transform: none !important;
-            zoom: 1 !important;
-          }
-          main, section, header, footer, nav {
-            width: 100% !important;
-          }
-        </style></head>`
-      )
+    ? html
+        .replaceAll("/site/REPLACE_ID/pricing", "#")
+        .replaceAll("/site/REPLACE_ID/about", "#")
+        .replaceAll("/site/REPLACE_ID/contact", "#")
+        .replaceAll("/site/REPLACE_ID", "#")
+        .replace(
+          "</head>",
+          `<style>
+            html, body {
+              width: 1440px !important;
+              min-height: 100vh !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              transform: none !important;
+              zoom: 1 !important;
+            }
+
+            body {
+              display: block !important;
+              overflow-x: hidden !important;
+            }
+
+            body > * {
+              transform: none !important;
+              zoom: 1 !important;
+            }
+
+            main, section, header, footer, nav {
+              width: 100% !important;
+            }
+
+            a {
+              pointer-events: none !important;
+              cursor: default !important;
+            }
+          </style></head>`
+        )
     : "";
+
+  const fileTabs = [
+    { label: "Home", file: "index.html" },
+    { label: "Pricing", file: "pricing.html" },
+    { label: "About", file: "about.html" },
+    { label: "Contact", file: "contact.html" },
+  ];
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email || "");
+      setCheckingAuth(false);
+    });
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,6 +149,29 @@ export default function BuilderPage() {
     return () => window.removeEventListener("resize", updateScale);
   }, []);
 
+  const login = async () => {
+    setLoginStatus("Sending magic link...");
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: loginEmail,
+      options: {
+        emailRedirectTo: `${window.location.origin}/builder`,
+      },
+    });
+
+    if (error) {
+      setLoginStatus(error.message);
+      return;
+    }
+
+    setLoginStatus("Check your email and click the magic link.");
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    window.location.reload();
+  };
+
   const loadProjects = async () => {
     const res = await fetch("/api/sites");
     const data = await res.json();
@@ -106,8 +179,8 @@ export default function BuilderPage() {
   };
 
   useEffect(() => {
-    loadProjects();
-  }, []);
+    if (userEmail) loadProjects();
+  }, [userEmail]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -115,19 +188,20 @@ export default function BuilderPage() {
 
     if (!id) return;
 
+    setStarted(true);
+
     fetch(`/api/site?id=${id}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.site) {
-          setHtml(data.site.html);
-          setProblem(data.site.problem || problems[0]);
+          const loadedFiles = data.site.html_files || { "index.html": data.site.html };
+          setFiles(loadedFiles);
+          setActiveFile("index.html");
+          setProblem(data.site.problem || "");
           setTemplate(data.site.template || templates[0]);
           setStatus("Project loaded");
           setMessages([
-            {
-              role: "ai",
-              text: "Project loaded. You can keep editing it here.",
-            },
+            { role: "ai", text: "Project loaded. I can edit the full multi-page site with context." },
           ]);
         }
       });
@@ -151,37 +225,48 @@ export default function BuilderPage() {
   };
 
   const runBuild = async (customProblem?: string) => {
-    const finalProblem = customProblem || problem;
+    const finalProblem = customProblem || problem || chatInput;
 
+    if (!finalProblem.trim()) return;
+
+    setStarted(true);
     setLoading(true);
     setLink("");
     setStatus("Building");
     addUser(finalProblem);
 
     await addAI("Understanding the product...");
-    await addAI("Designing the first version...");
-    await addAI("Generating the website...");
+    await addAI("Designing the multi-page website...");
+    await addAI("Generating Home, Pricing, About and Contact...");
 
-    const res = await fetch("/api/coach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ problem: finalProblem, template, style, audience }),
-    });
+    try {
+      const res = await fetch("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ problem: finalProblem, template, style, audience }),
+      });
 
-    const data = await res.json();
-    const generatedHtml = data.files?.["index.html"];
+      const data = await res.json();
+      const generatedFiles = data.files || {};
 
-    if (!generatedHtml) {
+      if (!generatedFiles["index.html"]) {
+        setStatus("Error");
+        await addAI("Something went wrong. No homepage came back.");
+        setLoading(false);
+        return;
+      }
+
+      setProblem(finalProblem);
+      setChatInput("");
+      setFiles(generatedFiles);
+      setActiveFile("index.html");
+      setStatus("Preview updated");
+      await addAI("Done. Multi-page preview updated.");
+    } catch {
       setStatus("Error");
-      await addAI("Something went wrong. No HTML came back.");
-      setLoading(false);
-      return;
+      await addAI("Network error. Try again with a shorter prompt.");
     }
 
-    setProblem(finalProblem);
-    setHtml(generatedHtml);
-    setStatus("Preview updated");
-    await addAI("Done. Preview updated.");
     setLoading(false);
   };
 
@@ -201,49 +286,57 @@ export default function BuilderPage() {
     addUser(instruction);
 
     await addAI("Reading your request...");
-    await addAI("Updating the design...");
-    await addAI("Rendering the new version...");
+    await addAI("Checking the full project context...");
+    await addAI("Updating the right page or pages...");
 
-    const res = await fetch("/api/coach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        editWebsite: true,
-        currentHtml: html,
-        instruction,
-        problem,
-      }),
-    });
+    try {
+      const res = await fetch("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          editWebsite: true,
+          currentHtml: html,
+          instruction,
+          problem,
+          activeFile,
+          allFiles: files,
+        }),
+      });
 
-    const data = await res.json();
-    const newHtml = data.files?.["index.html"];
+      const data = await res.json();
+      const changedFiles = data.files || {};
 
-    if (newHtml) {
-      setHtml(newHtml);
-      setStatus("Edited");
-      await addAI("Done. I updated the website.");
-    } else {
+      if (Object.keys(changedFiles).length > 0) {
+        setFiles((prev) => ({ ...prev, ...changedFiles }));
+        setStatus("Edited");
+        await addAI("Done. I updated the project with full context.");
+      } else {
+        setStatus("Error");
+        await addAI("I couldn't update the website this time.");
+      }
+    } catch {
       setStatus("Error");
-      await addAI("I couldn't update the website this time.");
+      await addAI("Network error while editing.");
     }
 
     setLoading(false);
   };
 
   const publish = async () => {
-    if (!html) {
+    if (!files["index.html"]) {
       setStatus("Generate first");
       return;
     }
 
     setStatus("Publishing");
-    await addAI("Publishing the page and creating a live link...");
+    await addAI("Publishing the multi-page site and creating a live link...");
 
     const res = await fetch("/api/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        html,
+        html: files["index.html"],
+        files,
         name: problem,
         problem,
         template,
@@ -261,7 +354,7 @@ export default function BuilderPage() {
     const fullUrl = window.location.origin + data.url;
     setLink(fullUrl);
     setStatus("Published");
-    await addAI("Published. Your live link is ready.");
+    await addAI("Published. Your multi-page live link is ready.");
     loadProjects();
   };
 
@@ -269,198 +362,382 @@ export default function BuilderPage() {
     window.location.href = `/builder?id=${id}`;
   };
 
+  if (checkingAuth) {
+    return (
+      <main style={startPage}>
+        <div style={startCard}>
+          <div style={mark}>P</div>
+          <h1 style={startTitle}>Loading...</h1>
+        </div>
+      </main>
+    );
+  }
+
+  if (!userEmail) {
+    return (
+      <main style={startPage}>
+        <div style={startCard}>
+          <div style={mark}>P</div>
+          <p style={eyebrow}>Problem to Profit AI</p>
+          <h1 style={startTitle}>Log in to build</h1>
+          <p style={startText}>
+            Enter your email and we’ll send you a magic link.
+          </p>
+
+          <label style={label}>Email</label>
+          <input
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            placeholder="you@email.com"
+            style={field}
+          />
+
+          <button onClick={login} style={startButton}>
+            Send magic link
+          </button>
+
+          <p style={mutedSmall}>{loginStatus}</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!started) {
+    return (
+      <main style={startPage}>
+        <div style={startCard}>
+          <div style={mark}>P</div>
+          <p style={eyebrow}>Problem to Profit AI</p>
+          <h1 style={startTitle}>What should we build?</h1>
+          <p style={startText}>
+            Choose the setup first. Then enter the builder with a clean workspace.
+          </p>
+
+          <label style={label}>Problem / product idea</label>
+          <textarea
+            value={problem}
+            onChange={(e) => setProblem(e.target.value)}
+            placeholder="Ex: AI receptionist för tandläkare"
+            style={bigTextArea}
+          />
+
+          <div style={startGrid}>
+            <div>
+              <label style={label}>Template</label>
+              <select value={template} onChange={(e) => setTemplate(e.target.value)} style={field}>
+                {templates.map((t) => (
+                  <option key={t} value={t} style={{ color: "#000" }}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={label}>Style</label>
+              <select value={style} onChange={(e) => setStyle(e.target.value)} style={field}>
+                {styles.map((s) => (
+                  <option key={s} value={s} style={{ color: "#000" }}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <label style={label}>Audience</label>
+          <input value={audience} onChange={(e) => setAudience(e.target.value)} style={field} />
+
+          <button onClick={() => runBuild()} disabled={loading} style={startButton}>
+            {loading ? "Building..." : "Start building"}
+          </button>
+
+          <div style={starterGrid}>
+            {starters.map((s) => (
+              <button
+                key={s}
+                onClick={() => {
+                  setProblem(s);
+                  runBuild(s);
+                }}
+                style={starterPill}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main style={app}>
-      <aside style={sidebar}>
+      <header style={topbar}>
         <div style={brand}>
-          <div style={mark}>P</div>
+          <div style={markSmall}>P</div>
           <div>
             <strong>Problem to Profit</strong>
-            <p style={mutedSmall}>AI website builder</p>
-          </div>
-        </div>
-
-        <div style={chatArea}>
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              style={{
-                ...message,
-                alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-                background: m.role === "user" ? "#fff" : "rgba(255,255,255,.06)",
-                color: m.role === "user" ? "#020617" : "#e5e7eb",
-                border:
-                  m.role === "user"
-                    ? "1px solid rgba(255,255,255,.7)"
-                    : "1px solid rgba(255,255,255,.08)",
-              }}
-            >
-              {m.text}
-            </div>
-          ))}
-
-          {loading && (
-            <div style={thinking}>
-              <span style={pulse} />
-              Agent is working
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        <div style={starterBox}>
-          <p style={mutedSmall}>Try one</p>
-          {problems.slice(0, 3).map((p) => (
-            <button key={p} onClick={() => runBuild(p)} disabled={loading} style={starter}>
-              {p}
-            </button>
-          ))}
-        </div>
-
-        <div style={composer}>
-          <textarea
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder={
-              html
-                ? "Ask for a change..."
-                : "Describe the website you want..."
-            }
-            style={textarea}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                edit();
-              }
-            }}
-          />
-          <button onClick={edit} disabled={loading} style={send}>
-            ↑
-          </button>
-        </div>
-      </aside>
-
-      <section style={workspace}>
-        <header style={topbar}>
-          <div>
-            <strong>Desktop canvas</strong>
             <p style={mutedSmall}>
-              {status} · 1440px · {Math.round(scale * 100)}%
+              {status} · {activeFile} · {Math.round(scale * 100)}% · {userEmail}
             </p>
           </div>
+        </div>
 
-          <div style={actions}>
-            <button onClick={() => setShowSettings(!showSettings)} style={ghost}>
-              Settings
-            </button>
-            <button onClick={() => runBuild()} disabled={loading} style={ghost}>
-              Regenerate
-            </button>
-            <button onClick={publish} disabled={loading} style={publishBtn}>
-              Publish
-            </button>
-          </div>
-        </header>
-
-        <div ref={previewOuterRef} style={stage}>
-          {previewHtml ? (
-            <div
+        <div style={topActions}>
+          {fileTabs.map((tab) => (
+            <button
+              key={tab.file}
+              onClick={() => files[tab.file] && setActiveFile(tab.file)}
+              disabled={!files[tab.file]}
               style={{
-                ...canvas,
-                transform: `scale(${scale})`,
+                ...tabBtn,
+                background: activeFile === tab.file ? "#fff" : "rgba(255,255,255,.05)",
+                color: activeFile === tab.file ? "#09090b" : "#fff",
+                opacity: files[tab.file] ? 1 : 0.35,
               }}
             >
-              <iframe srcDoc={previewHtml} style={iframe} sandbox="allow-scripts allow-same-origin" />
+              {tab.label}
+            </button>
+          ))}
+
+          <button onClick={() => runBuild()} disabled={loading} style={ghost}>
+            Regenerate
+          </button>
+
+          <button onClick={publish} disabled={loading} style={publishBtn}>
+            Publish
+          </button>
+
+          <button onClick={() => setMenuOpen(!menuOpen)} style={dots}>
+            ⋯
+          </button>
+        </div>
+
+        {menuOpen && (
+          <div style={menu}>
+            <h3 style={{ marginTop: 0 }}>Project settings</h3>
+
+            <label style={label}>Template</label>
+            <select value={template} onChange={(e) => setTemplate(e.target.value)} style={field}>
+              {templates.map((t) => (
+                <option key={t} value={t} style={{ color: "#000" }}>
+                  {t}
+                </option>
+              ))}
+            </select>
+
+            <label style={label}>Problem</label>
+            <input value={problem} onChange={(e) => setProblem(e.target.value)} style={field} />
+
+            <label style={label}>Style</label>
+            <input value={style} onChange={(e) => setStyle(e.target.value)} style={field} />
+
+            <label style={label}>Audience</label>
+            <input value={audience} onChange={(e) => setAudience(e.target.value)} style={field} />
+
+            {link && (
+              <div style={linkBox}>
+                <p style={{ margin: 0, marginBottom: 8 }}>Live link</p>
+                <a href={link} target="_blank" style={{ color: "#86efac", wordBreak: "break-all" }}>
+                  {link}
+                </a>
+              </div>
+            )}
+
+            <div style={projectsBox}>
+              <div style={rowBetween}>
+                <h3 style={{ margin: 0 }}>Projects</h3>
+                <button onClick={loadProjects} style={refresh}>Refresh</button>
+              </div>
+
+              <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+                {projects.length === 0 && <p style={mutedSmall}>No projects yet.</p>}
+                {projects.map((p) => (
+                  <button key={p.id} onClick={() => openProject(p.id)} style={projectCard}>
+                    <strong>{p.name || "Untitled project"}</strong>
+                    <span style={mutedSmall}>{p.template}</span>
+                    <span style={{ color: "#64748b", fontSize: 11 }}>Open in builder</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={factsBox}>
+              <h3 style={{ marginTop: 0 }}>Project facts</h3>
+              <p style={mutedSmall}>Pages: {Object.keys(files).length || 0}</p>
+              <p style={mutedSmall}>Template: {template}</p>
+              <p style={mutedSmall}>Style: {style}</p>
+              <p style={mutedSmall}>Audience: {audience}</p>
+              <p style={mutedSmall}>User: {userEmail}</p>
+            </div>
+
+            <button onClick={logout} style={logoutBtn}>
+              Log out
+            </button>
+          </div>
+        )}
+      </header>
+
+      <section style={stageWrap}>
+        <div ref={previewOuterRef} style={stage}>
+          {previewHtml ? (
+            <div style={{ ...canvas, transform: `scale(${scale})` }}>
+              <iframe srcDoc={previewHtml} style={iframe} sandbox="allow-same-origin allow-scripts" />
             </div>
           ) : (
             <div style={empty}>
               <h2>Start building</h2>
-              <p>Describe an idea in the chat or pick a quick start.</p>
+              <p>Use the chat below to build your website.</p>
             </div>
           )}
         </div>
       </section>
 
-      {showSettings && (
-        <aside style={rightPanel}>
-          <h3 style={{ marginTop: 0 }}>Project settings</h3>
-
-          <label style={label}>Template</label>
-          <select value={template} onChange={(e) => setTemplate(e.target.value)} style={field}>
-            {templates.map((t) => (
-              <option key={t} value={t} style={{ color: "#000" }}>
-                {t}
-              </option>
+      <footer style={bottomBar}>
+        <div style={chatStrip}>
+          <div style={miniChat}>
+            {messages.slice(-3).map((m, i) => (
+              <div key={i} style={miniMessage}>
+                <b>{m.role === "user" ? "You" : "AI"}:</b> {m.text}
+              </div>
             ))}
-          </select>
-
-          <label style={label}>Problem</label>
-          <input value={problem} onChange={(e) => setProblem(e.target.value)} style={field} />
-
-          <label style={label}>Style</label>
-          <input value={style} onChange={(e) => setStyle(e.target.value)} style={field} />
-
-          <label style={label}>Audience</label>
-          <input value={audience} onChange={(e) => setAudience(e.target.value)} style={field} />
-
-          <button onClick={() => runBuild()} disabled={loading} style={bigButton}>
-            {loading ? "Building..." : "Build project"}
-          </button>
-
-          {link && (
-            <div style={linkBox}>
-              <p style={{ margin: 0, marginBottom: 8 }}>Live link</p>
-              <a href={link} target="_blank" style={{ color: "#86efac", wordBreak: "break-all" }}>
-                {link}
-              </a>
-            </div>
-          )}
-
-          <div style={projectsBox}>
-            <div style={rowBetween}>
-              <h3 style={{ margin: 0 }}>Projects</h3>
-              <button onClick={loadProjects} style={refresh}>
-                Refresh
-              </button>
-            </div>
-
-            <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-              {projects.length === 0 && <p style={mutedSmall}>No projects yet.</p>}
-
-              {projects.map((p) => (
-                <button key={p.id} onClick={() => openProject(p.id)} style={projectCard}>
-                  <strong>{p.name || "Untitled project"}</strong>
-                  <span style={mutedSmall}>{p.template}</span>
-                  <span style={{ color: "#64748b", fontSize: 11 }}>Open in builder</span>
-                </button>
-              ))}
-            </div>
+            {loading && (
+              <div style={thinking}>
+                <span style={pulse} />
+                Agent is working
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        </aside>
-      )}
+
+          <div style={composer}>
+            <textarea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder={html ? "Ask AI to change the site..." : "Describe what to build..."}
+              style={textarea}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  edit();
+                }
+              }}
+            />
+            <button onClick={edit} disabled={loading} style={send}>
+              ↑
+            </button>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }
 
+const startPage: React.CSSProperties = {
+  minHeight: "100vh",
+  display: "grid",
+  placeItems: "center",
+  background:
+    "radial-gradient(circle at top left, rgba(34,197,94,.22), transparent 32%), #09090b",
+  color: "#fff",
+  fontFamily: "Inter, system-ui, Arial",
+  padding: 24,
+};
+
+const startCard: React.CSSProperties = {
+  width: "min(860px, 100%)",
+  padding: 34,
+  borderRadius: 30,
+  background: "#0f0f12",
+  border: "1px solid rgba(255,255,255,.08)",
+  boxShadow: "0 30px 120px rgba(0,0,0,.45)",
+};
+
+const eyebrow: React.CSSProperties = {
+  color: "#86efac",
+  fontSize: 13,
+  fontWeight: 900,
+  letterSpacing: 1.5,
+  textTransform: "uppercase",
+};
+
+const startTitle: React.CSSProperties = {
+  fontSize: 58,
+  lineHeight: 1,
+  margin: "10px 0",
+};
+
+const startText: React.CSSProperties = {
+  color: "#9ca3af",
+  fontSize: 18,
+  lineHeight: 1.6,
+};
+
+const startGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 14,
+};
+
+const bigTextArea: React.CSSProperties = {
+  width: "100%",
+  height: 110,
+  padding: 14,
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,.08)",
+  background: "#111114",
+  color: "#fff",
+  outline: "none",
+  resize: "none",
+};
+
+const startButton: React.CSSProperties = {
+  width: "100%",
+  marginTop: 18,
+  padding: 16,
+  borderRadius: 999,
+  border: "none",
+  background: "#22c55e",
+  color: "#052e16",
+  fontWeight: 950,
+  cursor: "pointer",
+};
+
+const starterGrid: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+  marginTop: 18,
+};
+
+const starterPill: React.CSSProperties = {
+  padding: "10px 13px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,.08)",
+  background: "rgba(255,255,255,.04)",
+  color: "#fff",
+  cursor: "pointer",
+};
+
 const app: React.CSSProperties = {
   height: "100vh",
   display: "grid",
-  gridTemplateColumns: "380px minmax(0,1fr) 330px",
+  gridTemplateRows: "auto minmax(0,1fr) 190px",
   background: "#09090b",
   color: "#fff",
   fontFamily: "Inter, system-ui, Arial",
   overflow: "hidden",
 };
 
-const sidebar: React.CSSProperties = {
-  padding: 18,
-  borderRight: "1px solid rgba(255,255,255,.08)",
+const topbar: React.CSSProperties = {
+  position: "relative",
+  padding: "14px 18px",
+  borderBottom: "1px solid rgba(255,255,255,.08)",
   background: "#0f0f12",
-  display: "grid",
-  gridTemplateRows: "auto minmax(0,1fr) auto auto",
-  gap: 14,
-  minHeight: 0,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
 };
 
 const brand: React.CSSProperties = {
@@ -470,8 +747,19 @@ const brand: React.CSSProperties = {
 };
 
 const mark: React.CSSProperties = {
-  width: 38,
-  height: 38,
+  width: 44,
+  height: 44,
+  borderRadius: 14,
+  background: "linear-gradient(135deg,#22c55e,#a7f3d0)",
+  color: "#052e16",
+  fontWeight: 950,
+  display: "grid",
+  placeItems: "center",
+};
+
+const markSmall: React.CSSProperties = {
+  width: 36,
+  height: 36,
   borderRadius: 12,
   background: "linear-gradient(135deg,#22c55e,#a7f3d0)",
   color: "#052e16",
@@ -480,119 +768,18 @@ const mark: React.CSSProperties = {
   placeItems: "center",
 };
 
-const mutedSmall: React.CSSProperties = {
-  margin: 0,
-  color: "#9ca3af",
-  fontSize: 12,
-  lineHeight: 1.45,
-};
-
-const chatArea: React.CSSProperties = {
-  overflowY: "auto",
-  minHeight: 0,
+const topActions: React.CSSProperties = {
   display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  padding: 12,
-  borderRadius: 18,
-  background: "#111114",
-  border: "1px solid rgba(255,255,255,.06)",
-};
-
-const message: React.CSSProperties = {
-  maxWidth: "88%",
-  padding: "12px 14px",
-  borderRadius: 18,
-  fontSize: 14,
-  lineHeight: 1.45,
-};
-
-const thinking: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
   gap: 8,
-  color: "#a7f3d0",
-  fontSize: 13,
-  padding: 10,
-};
-
-const pulse: React.CSSProperties = {
-  width: 9,
-  height: 9,
-  borderRadius: "50%",
-  background: "#22c55e",
-  boxShadow: "0 0 24px #22c55e",
-};
-
-const starterBox: React.CSSProperties = {
-  padding: 12,
-  borderRadius: 18,
-  background: "#111114",
-  border: "1px solid rgba(255,255,255,.06)",
-};
-
-const starter: React.CSSProperties = {
-  width: "100%",
-  marginTop: 8,
-  padding: "10px 12px",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.04)",
-  color: "#fff",
-  textAlign: "left",
-  cursor: "pointer",
-};
-
-const composer: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 44px",
-  gap: 10,
-};
-
-const textarea: React.CSSProperties = {
-  height: 86,
-  padding: 13,
-  borderRadius: 18,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "#111114",
-  color: "#fff",
-  outline: "none",
-  resize: "none",
-};
-
-const send: React.CSSProperties = {
-  height: 44,
-  alignSelf: "end",
-  borderRadius: 999,
-  border: "none",
-  background: "#fff",
-  color: "#09090b",
-  fontWeight: 950,
-  cursor: "pointer",
-};
-
-const workspace: React.CSSProperties = {
-  padding: 18,
-  display: "grid",
-  gridTemplateRows: "auto minmax(0,1fr)",
-  gap: 14,
-  minWidth: 0,
-  minHeight: 0,
-};
-
-const topbar: React.CSSProperties = {
-  padding: 14,
-  borderRadius: 18,
-  background: "#0f0f12",
-  border: "1px solid rgba(255,255,255,.08)",
-  display: "flex",
-  justifyContent: "space-between",
   alignItems: "center",
 };
 
-const actions: React.CSSProperties = {
-  display: "flex",
-  gap: 10,
+const tabBtn: React.CSSProperties = {
+  padding: "9px 13px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,.08)",
+  fontWeight: 800,
+  cursor: "pointer",
 };
 
 const ghost: React.CSSProperties = {
@@ -615,8 +802,39 @@ const publishBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const stage: React.CSSProperties = {
+const dots: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,.1)",
+  background: "rgba(255,255,255,.04)",
+  color: "#fff",
+  fontSize: 24,
+  cursor: "pointer",
+};
+
+const menu: React.CSSProperties = {
+  position: "absolute",
+  right: 18,
+  top: 66,
+  width: 360,
+  maxHeight: "calc(100vh - 90px)",
+  overflowY: "auto",
+  padding: 18,
+  borderRadius: 22,
+  background: "#0f0f12",
+  border: "1px solid rgba(255,255,255,.1)",
+  boxShadow: "0 30px 100px rgba(0,0,0,.55)",
+  zIndex: 20,
+};
+
+const stageWrap: React.CSSProperties = {
   minHeight: 0,
+  padding: 18,
+};
+
+const stage: React.CSSProperties = {
+  height: "100%",
   overflow: "auto",
   background: "#111114",
   border: "1px solid rgba(255,255,255,.08)",
@@ -650,11 +868,85 @@ const empty: React.CSSProperties = {
   textAlign: "center",
 };
 
-const rightPanel: React.CSSProperties = {
-  padding: 18,
+const bottomBar: React.CSSProperties = {
+  borderTop: "1px solid rgba(255,255,255,.08)",
   background: "#0f0f12",
-  borderLeft: "1px solid rgba(255,255,255,.08)",
+  padding: 14,
+};
+
+const chatStrip: React.CSSProperties = {
+  maxWidth: 1180,
+  margin: "0 auto",
+  display: "grid",
+  gridTemplateColumns: "1fr 1.6fr",
+  gap: 14,
+  height: "100%",
+};
+
+const miniChat: React.CSSProperties = {
   overflowY: "auto",
+  padding: 12,
+  borderRadius: 18,
+  background: "#111114",
+  border: "1px solid rgba(255,255,255,.06)",
+};
+
+const miniMessage: React.CSSProperties = {
+  color: "#d1d5db",
+  fontSize: 13,
+  marginBottom: 8,
+};
+
+const composer: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 48px",
+  gap: 10,
+  alignItems: "end",
+};
+
+const textarea: React.CSSProperties = {
+  height: 128,
+  padding: 15,
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,.08)",
+  background: "#111114",
+  color: "#fff",
+  outline: "none",
+  resize: "none",
+};
+
+const send: React.CSSProperties = {
+  height: 48,
+  borderRadius: 999,
+  border: "none",
+  background: "#fff",
+  color: "#09090b",
+  fontWeight: 950,
+  cursor: "pointer",
+};
+
+const mutedSmall: React.CSSProperties = {
+  margin: 0,
+  color: "#9ca3af",
+  fontSize: 12,
+  lineHeight: 1.45,
+};
+
+const thinking: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  color: "#a7f3d0",
+  fontSize: 13,
+  padding: 10,
+};
+
+const pulse: React.CSSProperties = {
+  width: 9,
+  height: 9,
+  borderRadius: "50%",
+  background: "#22c55e",
+  boxShadow: "0 0 24px #22c55e",
 };
 
 const label: React.CSSProperties = {
@@ -676,18 +968,6 @@ const field: React.CSSProperties = {
   outline: "none",
 };
 
-const bigButton: React.CSSProperties = {
-  width: "100%",
-  marginTop: 18,
-  padding: 14,
-  borderRadius: 999,
-  border: "none",
-  background: "#fff",
-  color: "#09090b",
-  fontWeight: 950,
-  cursor: "pointer",
-};
-
 const linkBox: React.CSSProperties = {
   marginTop: 18,
   padding: 14,
@@ -698,6 +978,14 @@ const linkBox: React.CSSProperties = {
 
 const projectsBox: React.CSSProperties = {
   marginTop: 24,
+  padding: 14,
+  borderRadius: 18,
+  background: "#111114",
+  border: "1px solid rgba(255,255,255,.06)",
+};
+
+const factsBox: React.CSSProperties = {
+  marginTop: 18,
   padding: 14,
   borderRadius: 18,
   background: "#111114",
@@ -729,4 +1017,16 @@ const projectCard: React.CSSProperties = {
   textAlign: "left",
   display: "grid",
   gap: 4,
+};
+
+const logoutBtn: React.CSSProperties = {
+  width: "100%",
+  marginTop: 18,
+  padding: 14,
+  borderRadius: 999,
+  border: "none",
+  background: "rgba(239,68,68,.16)",
+  color: "#fecaca",
+  fontWeight: 900,
+  cursor: "pointer",
 };

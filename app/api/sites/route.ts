@@ -35,30 +35,22 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET(req: Request) {
+export async function GET() {
   const user = await getUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
-  }
-
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-
-  if (!id) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    return NextResponse.json({ sites: [] });
   }
 
   const { data, error } = await supabaseAdmin
     .from("sites")
-    .select("*")
-    .eq("id", id)
+    .select("id, name, problem, template, created_at")
     .eq("user_id", user.id)
-    .single();
+    .order("created_at", { ascending: false });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ site: data });
+  return NextResponse.json({ sites: data });
 }

@@ -6,26 +6,26 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export default async function SiteHome({
+export default async function SiteSubPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string; page: string }>;
 }) {
-  const { id } = await params;
+  const { id, page } = await params;
+
+  const fileName = `${page}.html`;
 
   const { data, error } = await supabase
     .from("sites")
-    .select("html, html_files")
+    .select("html_files")
     .eq("id", id)
     .single();
 
-  if (error || !data) notFound();
-
-  const html = data.html_files?.["index.html"] || data.html;
+  if (error || !data?.html_files?.[fileName]) notFound();
 
   return (
     <iframe
-      srcDoc={html}
+      srcDoc={data.html_files[fileName]}
       style={{ width: "100vw", height: "100vh", border: "none", display: "block" }}
     />
   );
