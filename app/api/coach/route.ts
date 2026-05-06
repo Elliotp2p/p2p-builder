@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 
+export const runtime = "nodejs";
+
 const client = process.env.OPENAI_API_KEY
   ? new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
@@ -56,16 +58,16 @@ color:#cbd5e1;
 </html>`;
 }
 
-function safeParse(content: string) {
-  try {
-    return JSON.parse(clean(content));
-  } catch {
-    const cleaned = clean(content);
+function safeParseJSON(raw: string) {
+  const cleaned = clean(raw);
 
+  try {
+    return JSON.parse(cleaned);
+  } catch {
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
 
-    if (start !== -1 && end !== -1) {
+    if (start !== -1 && end !== -1 && end > start) {
       return JSON.parse(cleaned.slice(start, end + 1));
     }
 
@@ -73,25 +75,11 @@ function safeParse(content: string) {
   }
 }
 
-function ensureFiles(files: any) {
-  return {
-    "index.html": files["index.html"],
-    "pricing.html":
-      files["pricing.html"] || files["index.html"],
-    "about.html":
-      files["about.html"] || files["index.html"],
-    "contact.html":
-      files["contact.html"] || files["index.html"],
-  };
-}
-
 export async function POST(req: Request) {
   try {
     if (!client) {
       return Response.json({
-        files: {
-          "index.html": fallbackHtml("Missing OpenAI API key."),
-        },
+        error: "Missing OpenAI API key",
       });
     }
 
@@ -109,66 +97,83 @@ export async function POST(req: Request) {
       allFiles,
     } = body;
 
-    if (editWebsite) {
-      const prompt = `
-Return ONLY valid JSON.
+    const encoder = new TextEncoder();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (data: any) => {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
+          );
+        };
+
+        try {
+          send({
+            type: "status",
+            text: "Thinking...",
+          });
+
+          let prompt = "";
+
+          if (editWebsite) {
+            prompt = `
+Return ONLY valid JSON. No markdown.
+
+You are editing a generated multi-page startup website.
 
 User request:
 "${instruction}"
 
 Active file:
-${activeFile}
+${activeFile || "index.html"}
 
-Current HTML:
-${currentHtml}
+Current active HTML:
+${currentHtml || ""}
 
-Project context:
+Full project context:
 ${JSON.stringify(allFiles || {}, null, 2)}
 
 Return:
 {
   "files": {
-    "${activeFile}": "complete updated HTML"
+    "${activeFile || "index.html"}": "complete updated HTML"
   }
 }
 
 Rules:
 - Return only changed files.
-- Complete HTML document.
-- CSS inside <style>.
-- Full width layout.
+- Every returned file must be a complete HTML document.
+- CSS must be inside <style>.
 - No markdown.
 - No external scripts.
-- Every button must work.
-- Use links instead of dead buttons.
+- No external images.
+- Keep layout premium, modern, clean.
+- Every visible CTA should be a working <a href=""> link when possible.
+- Navigation links:
+  Home = /site/REPLACE_ID
+  Pricing = /site/REPLACE_ID/pricing
+  About = /site/REPLACE_ID/about
+  Contact = /site/REPLACE_ID/contact
+
+DATABASE FORM RULES:
+- If editing contact.html or adding a contact/lead/demo form, the form MUST submit to /api/leads.
+- Use method="POST".
+- Include hidden input:
+  <input type="hidden" name="site_id" value="REPLACE_ID" />
+- Use input names exactly:
+  name="name"
+  name="email"
+  name="message"
+- The submit control should be:
+  <button type="submit">Send message</button>
+- Do not use JavaScript for form submission.
+- Do not use mailto for the main contact form.
 `;
+          } else {
+            prompt = `
+Return ONLY valid JSON. No markdown.
 
-      const res = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        temperature: 0.4,
-        max_tokens: 12000,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-      });
-
-      const parsed = safeParse(
-        res.choices[0].message.content || "{}"
-      );
-
-      return Response.json({
-        files: parsed.files || {},
-      });
-    }
-
-    const prompt = `
-Return ONLY valid JSON.
-
-Build a PREMIUM startup website.
+Build a PREMIUM multi-page startup website.
 
 Business idea:
 "${problem}"
@@ -193,102 +198,158 @@ Return:
 }
 
 GLOBAL RULES:
-- Every file complete HTML.
-- CSS inside <style>.
+- The site is for a NEW company solving the user's idea.
+- Not for Problem to Profit AI.
+- Create a realistic brand name.
+- Every file must be complete HTML.
+- CSS must be inside <style> in every file.
 - No markdown.
 - No external images.
 - No external scripts.
 - No emojis.
 - Full-width sections.
-- Beautiful modern spacing.
+- Body CSS must include margin:0; width:100%; min-height:100vh.
+- Do not use transform: scale().
+- Do not use zoom.
 - Premium startup quality.
-- Make it look funded.
-- Strong hero section.
-- Strong CTA sections.
 - Strong typography.
-- Add gradients/cards/mockups.
-- Avoid generic boring layouts.
-
-VERY IMPORTANT:
-- Keep HTML relatively compact.
-- Avoid huge repeated sections.
-- Avoid unnecessary text.
-- Avoid giant FAQs.
-- Avoid giant testimonials sections.
-- Avoid giant CSS files.
-- Keep response FAST.
+- Strong hero.
+- Strong CTA.
+- Modern cards, gradients, mockups.
+- Compact enough to generate quickly.
 
 NAVIGATION:
+Every page must include nav links:
 Home = /site/REPLACE_ID
 Pricing = /site/REPLACE_ID/pricing
 About = /site/REPLACE_ID/about
 Contact = /site/REPLACE_ID/contact
 
-BUTTON RULES:
-- Every CTA must work.
-- Use <a href=""> links.
-- Never create dead buttons.
-- Hero CTA should go to pricing.
-- Contact CTA should go to contact page.
-- Pricing cards should link to contact.
+BUTTON + CTA RULES:
+- Every visible button must work.
+- Prefer <a class="button" href="...">Text</a> for CTAs.
+- Do not create dead buttons.
+- Do not use JavaScript onclick.
+- "Get started", "Start free", "View pricing", "Choose plan", "See plans" link to /site/REPLACE_ID/pricing.
+- "Book demo", "Contact sales", "Talk to us", "Schedule call", "Request demo" link to /site/REPLACE_ID/contact.
+- "Learn more", "About us", "Our story" link to /site/REPLACE_ID/about.
+- Pricing card CTAs should link to /site/REPLACE_ID/contact.
 
-PAGE RULES:
+DATABASE FORM RULES:
+contact.html MUST include a real working lead/contact form.
+The form must look premium and must be exactly this behavior:
+<form method="POST" action="/api/leads">
+  <input type="hidden" name="site_id" value="REPLACE_ID" />
+  <input name="name" ... />
+  <input name="email" type="email" ... />
+  <textarea name="message" ...></textarea>
+  <button type="submit">Send message</button>
+</form>
 
+Important:
+- Do not use mailto as the main form.
+- Do not use JavaScript for the form.
+- Do not remove the hidden site_id field.
+- The contact form must be styled beautifully with CSS.
+- The submit button must be a real button type="submit".
+
+PAGE CONTENT:
 index.html:
 - Hero
-- Features
-- Product mockup
+- product mockup
+- trust/social proof
+- features
+- how it works
 - CTA
-- Footer
+- footer
 
 pricing.html:
-- Pricing hero
+- pricing hero
 - 3 pricing cards
 - FAQ
 - CTA
+- footer
 
 about.html:
-- Mission
-- Story
-- Team section
+- mission
+- why now
+- story
+- principles/team-style section
 - CTA
+- footer
 
 contact.html:
-- Contact hero
-- Form UI
-- Contact methods
-- CTA
+- contact hero
+- real database form that posts to /api/leads
+- contact methods
+- FAQ
+- CTA/footer
 `;
+          }
 
-    const res = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      temperature: 0.7,
-      max_tokens: 14000,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+          send({
+            type: "status",
+            text: editWebsite
+              ? "Editing website..."
+              : "Generating website...",
+          });
+
+          const completion = await client.chat.completions.create({
+            model: "gpt-4.1-mini",
+            temperature: editWebsite ? 0.45 : 0.7,
+            max_tokens: 14000,
+            response_format: {
+              type: "json_object",
+            },
+            messages: [
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+          });
+
+          const raw = completion.choices[0].message.content || "{}";
+          const parsed = safeParseJSON(raw);
+
+          send({
+            type: "files",
+            files: parsed.files || {},
+          });
+
+          send({
+            type: "done",
+          });
+
+          controller.close();
+        } catch (e: any) {
+          send({
+            type: "error",
+            text: e.message || "Unknown error",
+          });
+
+          send({
+            type: "files",
+            files: {
+              "index.html": fallbackHtml(e.message || "Unknown error"),
+            },
+          });
+
+          controller.close();
+        }
+      },
     });
 
-    const parsed = safeParse(
-      res.choices[0].message.content || "{}"
-    );
-
-    const files = ensureFiles(parsed.files || {});
-
-    return Response.json({
-      files,
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        Connection: "keep-alive",
+        "Cache-Control": "no-cache",
+      },
     });
   } catch (e: any) {
     return Response.json({
-      files: {
-        "index.html": fallbackHtml(
-          e.message || "Unknown error"
-        ),
-      },
+      error: e.message,
     });
   }
 }

@@ -42,6 +42,16 @@ type Project = {
   created_at: string;
 };
 
+type Lead = {
+  id: string;
+  site_id: string;
+  site_name?: string;
+  name?: string;
+  email?: string;
+  message?: string;
+  created_at?: string;
+};
+
 export default function BuilderPage() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,7 +60,6 @@ export default function BuilderPage() {
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [userEmail, setUserEmail] = useState("");
-  const [loginEmail, setLoginEmail] = useState("");
   const [loginStatus, setLoginStatus] = useState("");
 
   const [problem, setProblem] = useState("");
@@ -69,15 +78,22 @@ export default function BuilderPage() {
   const [status, setStatus] = useState("Ready");
   const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
 
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "ai", text: "Describe what you want to build and I’ll create the site." },
+    {
+      role: "ai",
+      text: "Describe what you want to build and I’ll create the site.",
+    },
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const previewOuterRef = useRef<HTMLDivElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
   const [scale, setScale] = useState(0.6);
+  const [selectedText, setSelectedText] = useState("");
 
   const previewHtml = html
     ? html
@@ -102,18 +118,27 @@ export default function BuilderPage() {
               overflow-x: hidden !important;
             }
 
-            body > * {
-              transform: none !important;
-              zoom: 1 !important;
-            }
-
             main, section, header, footer, nav {
               width: 100% !important;
             }
 
             a {
-              pointer-events: none !important;
-              cursor: default !important;
+              pointer-events: auto !important;
+            }
+
+            h1:hover,
+            h2:hover,
+            h3:hover,
+            h4:hover,
+            h5:hover,
+            h6:hover,
+            p:hover,
+            a:hover,
+            button:hover,
+            span:hover {
+              outline: 2px solid #22c55e !important;
+              outline-offset: 4px !important;
+              cursor: pointer !important;
             }
           </style></head>`
         )
@@ -127,15 +152,75 @@ export default function BuilderPage() {
   ];
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email || "");
+    const loadUser = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      setUserEmail(session?.user?.email || "");
       setCheckingAuth(false);
+    };
+
+    loadUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email || "");
     });
-  }, []);
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !previewHtml) return;
+
+    const injectEditor = () => {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!doc) return;
+
+      const elements = doc.querySelectorAll(
+        "h1,h2,h3,h4,h5,h6,p,a,button,span"
+      );
+
+      elements.forEach((el: any) => {
+        el.style.cursor = "pointer";
+
+        el.onclick = (e: any) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const text = el.innerText || "";
+          if (!text.trim()) return;
+
+          setSelectedText(text);
+
+          const replacement = prompt("Edit text:", text);
+
+          if (replacement && replacement !== text) {
+            const updated = html.replace(text, replacement);
+
+            setFiles((prev) => ({
+              ...prev,
+              [activeFile]: updated,
+            }));
+
+            setStatus("Text edited visually");
+          }
+        };
+      });
+    };
+
+    const timeout = setTimeout(injectEditor, 600);
+    return () => clearTimeout(timeout);
+  }, [previewHtml, activeFile, html]);
 
   useEffect(() => {
     const updateScale = () => {
@@ -146,25 +231,81 @@ export default function BuilderPage() {
 
     updateScale();
     window.addEventListener("resize", updateScale);
+
     return () => window.removeEventListener("resize", updateScale);
   }, []);
 
-  const login = async () => {
-    setLoginStatus("Sending magic link...");
+  const readStream = async (res: Response) => {
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No stream reader");
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email: loginEmail,
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+
+      for (const event of events) {
+        const line = event.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+
+        const payload = JSON.parse(line.replace("data: ", ""));
+
+        if (payload.type === "status") {
+          setStatus(payload.text);
+          setMessages((m) => [...m, { role: "ai", text: payload.text }]);
+        }
+
+        if (payload.type === "files") {
+          const incomingFiles = payload.files || {};
+
+          setFiles((prev) => ({
+            ...prev,
+            ...incomingFiles,
+          }));
+
+          if (incomingFiles["index.html"]) {
+            setActiveFile("index.html");
+          }
+        }
+
+        if (payload.type === "error") {
+          setStatus("Error");
+          setMessages((m) => [
+            ...m,
+            {
+              role: "ai",
+              text: payload.text || "Something went wrong.",
+            },
+          ]);
+        }
+
+        if (payload.type === "done") {
+          setStatus("Done");
+        }
+      }
+    }
+  };
+
+  const login = async () => {
+    setLoginStatus("Opening Google...");
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
       options: {
-        emailRedirectTo: `${window.location.origin}/builder`,
+        redirectTo: `${window.location.origin}/builder`,
       },
     });
 
     if (error) {
       setLoginStatus(error.message);
-      return;
     }
-
-    setLoginStatus("Check your email and click the magic link.");
   };
 
   const logout = async () => {
@@ -178,8 +319,17 @@ export default function BuilderPage() {
     setProjects(data.sites || []);
   };
 
+  const loadLeads = async () => {
+    const res = await fetch("/api/leads");
+    const data = await res.json();
+    setLeads(data.leads || []);
+  };
+
   useEffect(() => {
-    if (userEmail) loadProjects();
+    if (userEmail) {
+      loadProjects();
+      loadLeads();
+    }
   }, [userEmail]);
 
   useEffect(() => {
@@ -194,14 +344,20 @@ export default function BuilderPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.site) {
-          const loadedFiles = data.site.html_files || { "index.html": data.site.html };
+          const loadedFiles = data.site.html_files || {
+            "index.html": data.site.html,
+          };
+
           setFiles(loadedFiles);
           setActiveFile("index.html");
           setProblem(data.site.problem || "");
           setTemplate(data.site.template || templates[0]);
           setStatus("Project loaded");
           setMessages([
-            { role: "ai", text: "Project loaded. I can edit the full multi-page site with context." },
+            {
+              role: "ai",
+              text: "Project loaded. I can edit the full multi-page site with context.",
+            },
           ]);
         }
       });
@@ -209,19 +365,6 @@ export default function BuilderPage() {
 
   const addUser = (text: string) => {
     setMessages((m) => [...m, { role: "user", text }]);
-  };
-
-  const addAI = async (text: string) => {
-    setMessages((m) => [...m, { role: "ai", text: "" }]);
-
-    for (let i = 0; i <= text.length; i++) {
-      await new Promise((r) => setTimeout(r, 7));
-      setMessages((m) => {
-        const copy = [...m];
-        copy[copy.length - 1] = { role: "ai", text: text.slice(0, i) };
-        return copy;
-      });
-    }
   };
 
   const runBuild = async (customProblem?: string) => {
@@ -232,39 +375,37 @@ export default function BuilderPage() {
     setStarted(true);
     setLoading(true);
     setLink("");
-    setStatus("Building");
+    setStatus("Starting...");
     addUser(finalProblem);
-
-    await addAI("Understanding the product...");
-    await addAI("Designing the multi-page website...");
-    await addAI("Generating Home, Pricing, About and Contact...");
 
     try {
       const res = await fetch("/api/coach", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ problem: finalProblem, template, style, audience }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          problem: finalProblem,
+          template,
+          style,
+          audience,
+        }),
       });
-
-      const data = await res.json();
-      const generatedFiles = data.files || {};
-
-      if (!generatedFiles["index.html"]) {
-        setStatus("Error");
-        await addAI("Something went wrong. No homepage came back.");
-        setLoading(false);
-        return;
-      }
 
       setProblem(finalProblem);
       setChatInput("");
-      setFiles(generatedFiles);
-      setActiveFile("index.html");
+
+      await readStream(res);
       setStatus("Preview updated");
-      await addAI("Done. Multi-page preview updated.");
     } catch {
       setStatus("Error");
-      await addAI("Network error. Try again with a shorter prompt.");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: "Network error. Try again with a shorter prompt.",
+        },
+      ]);
     }
 
     setLoading(false);
@@ -282,17 +423,15 @@ export default function BuilderPage() {
     }
 
     setLoading(true);
-    setStatus("Editing");
+    setStatus("Editing...");
     addUser(instruction);
-
-    await addAI("Reading your request...");
-    await addAI("Checking the full project context...");
-    await addAI("Updating the right page or pages...");
 
     try {
       const res = await fetch("/api/coach", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           editWebsite: true,
           currentHtml: html,
@@ -303,20 +442,17 @@ export default function BuilderPage() {
         }),
       });
 
-      const data = await res.json();
-      const changedFiles = data.files || {};
-
-      if (Object.keys(changedFiles).length > 0) {
-        setFiles((prev) => ({ ...prev, ...changedFiles }));
-        setStatus("Edited");
-        await addAI("Done. I updated the project with full context.");
-      } else {
-        setStatus("Error");
-        await addAI("I couldn't update the website this time.");
-      }
+      await readStream(res);
+      setStatus("Edited");
     } catch {
       setStatus("Error");
-      await addAI("Network error while editing.");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: "Network error while editing.",
+        },
+      ]);
     }
 
     setLoading(false);
@@ -329,11 +465,12 @@ export default function BuilderPage() {
     }
 
     setStatus("Publishing");
-    await addAI("Publishing the multi-page site and creating a live link...");
 
     const res = await fetch("/api/save", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         html: files["index.html"],
         files,
@@ -347,15 +484,16 @@ export default function BuilderPage() {
 
     if (!res.ok) {
       setStatus("Publish error");
-      await addAI("Publish error: " + data.error);
       return;
     }
 
     const fullUrl = window.location.origin + data.url;
+
     setLink(fullUrl);
     setStatus("Published");
-    await addAI("Published. Your multi-page live link is ready.");
+
     loadProjects();
+    loadLeads();
   };
 
   const openProject = (id: string) => {
@@ -378,22 +516,17 @@ export default function BuilderPage() {
       <main style={startPage}>
         <div style={startCard}>
           <div style={mark}>P</div>
+
           <p style={eyebrow}>Problem to Profit AI</p>
+
           <h1 style={startTitle}>Log in to build</h1>
+
           <p style={startText}>
-            Enter your email and we’ll send you a magic link.
+            Continue with Google to access your AI builder workspace.
           </p>
 
-          <label style={label}>Email</label>
-          <input
-            value={loginEmail}
-            onChange={(e) => setLoginEmail(e.target.value)}
-            placeholder="you@email.com"
-            style={field}
-          />
-
           <button onClick={login} style={startButton}>
-            Send magic link
+            Continue with Google
           </button>
 
           <p style={mutedSmall}>{loginStatus}</p>
@@ -407,13 +540,17 @@ export default function BuilderPage() {
       <main style={startPage}>
         <div style={startCard}>
           <div style={mark}>P</div>
+
           <p style={eyebrow}>Problem to Profit AI</p>
+
           <h1 style={startTitle}>What should we build?</h1>
+
           <p style={startText}>
             Choose the setup first. Then enter the builder with a clean workspace.
           </p>
 
           <label style={label}>Problem / product idea</label>
+
           <textarea
             value={problem}
             onChange={(e) => setProblem(e.target.value)}
@@ -424,7 +561,12 @@ export default function BuilderPage() {
           <div style={startGrid}>
             <div>
               <label style={label}>Template</label>
-              <select value={template} onChange={(e) => setTemplate(e.target.value)} style={field}>
+
+              <select
+                value={template}
+                onChange={(e) => setTemplate(e.target.value)}
+                style={field}
+              >
                 {templates.map((t) => (
                   <option key={t} value={t} style={{ color: "#000" }}>
                     {t}
@@ -435,7 +577,12 @@ export default function BuilderPage() {
 
             <div>
               <label style={label}>Style</label>
-              <select value={style} onChange={(e) => setStyle(e.target.value)} style={field}>
+
+              <select
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+                style={field}
+              >
                 {styles.map((s) => (
                   <option key={s} value={s} style={{ color: "#000" }}>
                     {s}
@@ -446,9 +593,18 @@ export default function BuilderPage() {
           </div>
 
           <label style={label}>Audience</label>
-          <input value={audience} onChange={(e) => setAudience(e.target.value)} style={field} />
 
-          <button onClick={() => runBuild()} disabled={loading} style={startButton}>
+          <input
+            value={audience}
+            onChange={(e) => setAudience(e.target.value)}
+            style={field}
+          />
+
+          <button
+            onClick={() => runBuild()}
+            disabled={loading}
+            style={startButton}
+          >
             {loading ? "Building..." : "Start building"}
           </button>
 
@@ -476,8 +632,10 @@ export default function BuilderPage() {
       <header style={topbar}>
         <div style={brand}>
           <div style={markSmall}>P</div>
+
           <div>
             <strong>Problem to Profit</strong>
+
             <p style={mutedSmall}>
               {status} · {activeFile} · {Math.round(scale * 100)}% · {userEmail}
             </p>
@@ -492,7 +650,8 @@ export default function BuilderPage() {
               disabled={!files[tab.file]}
               style={{
                 ...tabBtn,
-                background: activeFile === tab.file ? "#fff" : "rgba(255,255,255,.05)",
+                background:
+                  activeFile === tab.file ? "#fff" : "rgba(255,255,255,.05)",
                 color: activeFile === tab.file ? "#09090b" : "#fff",
                 opacity: files[tab.file] ? 1 : 0.35,
               }}
@@ -519,7 +678,12 @@ export default function BuilderPage() {
             <h3 style={{ marginTop: 0 }}>Project settings</h3>
 
             <label style={label}>Template</label>
-            <select value={template} onChange={(e) => setTemplate(e.target.value)} style={field}>
+
+            <select
+              value={template}
+              onChange={(e) => setTemplate(e.target.value)}
+              style={field}
+            >
               {templates.map((t) => (
                 <option key={t} value={t} style={{ color: "#000" }}>
                   {t}
@@ -528,18 +692,41 @@ export default function BuilderPage() {
             </select>
 
             <label style={label}>Problem</label>
-            <input value={problem} onChange={(e) => setProblem(e.target.value)} style={field} />
+
+            <input
+              value={problem}
+              onChange={(e) => setProblem(e.target.value)}
+              style={field}
+            />
 
             <label style={label}>Style</label>
-            <input value={style} onChange={(e) => setStyle(e.target.value)} style={field} />
+
+            <input
+              value={style}
+              onChange={(e) => setStyle(e.target.value)}
+              style={field}
+            />
 
             <label style={label}>Audience</label>
-            <input value={audience} onChange={(e) => setAudience(e.target.value)} style={field} />
+
+            <input
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+              style={field}
+            />
 
             {link && (
               <div style={linkBox}>
                 <p style={{ margin: 0, marginBottom: 8 }}>Live link</p>
-                <a href={link} target="_blank" style={{ color: "#86efac", wordBreak: "break-all" }}>
+
+                <a
+                  href={link}
+                  target="_blank"
+                  style={{
+                    color: "#86efac",
+                    wordBreak: "break-all",
+                  }}
+                >
                   {link}
                 </a>
               </div>
@@ -548,28 +735,95 @@ export default function BuilderPage() {
             <div style={projectsBox}>
               <div style={rowBetween}>
                 <h3 style={{ margin: 0 }}>Projects</h3>
-                <button onClick={loadProjects} style={refresh}>Refresh</button>
+
+                <button onClick={loadProjects} style={refresh}>
+                  Refresh
+                </button>
               </div>
 
               <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-                {projects.length === 0 && <p style={mutedSmall}>No projects yet.</p>}
+                {projects.length === 0 && (
+                  <p style={mutedSmall}>No projects yet.</p>
+                )}
+
                 {projects.map((p) => (
-                  <button key={p.id} onClick={() => openProject(p.id)} style={projectCard}>
+                  <button
+                    key={p.id}
+                    onClick={() => openProject(p.id)}
+                    style={projectCard}
+                  >
                     <strong>{p.name || "Untitled project"}</strong>
+
                     <span style={mutedSmall}>{p.template}</span>
-                    <span style={{ color: "#64748b", fontSize: 11 }}>Open in builder</span>
+
+                    <span style={{ color: "#64748b", fontSize: 11 }}>
+                      Open in builder
+                    </span>
                   </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={leadsBox}>
+              <div style={rowBetween}>
+                <h3 style={{ margin: 0 }}>Leads inbox</h3>
+
+                <button onClick={loadLeads} style={refresh}>
+                  Refresh
+                </button>
+              </div>
+
+              <p style={mutedSmall}>
+                Messages collected from your published sites.
+              </p>
+
+              <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+                {leads.length === 0 && (
+                  <p style={mutedSmall}>No leads yet.</p>
+                )}
+
+                {leads.map((lead) => (
+                  <div key={lead.id} style={leadCard}>
+                    <strong>{lead.name || "Unnamed lead"}</strong>
+
+                    <span style={mutedSmall}>
+                      {lead.email || "No email"}
+                    </span>
+
+                    <span style={leadSite}>
+                      {lead.site_name || lead.site_id}
+                    </span>
+
+                    {lead.message && (
+                      <p style={leadMessage}>{lead.message}</p>
+                    )}
+
+                    {lead.created_at && (
+                      <span style={leadDate}>
+                        {new Date(lead.created_at).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
 
             <div style={factsBox}>
               <h3 style={{ marginTop: 0 }}>Project facts</h3>
+
               <p style={mutedSmall}>Pages: {Object.keys(files).length || 0}</p>
+
               <p style={mutedSmall}>Template: {template}</p>
+
               <p style={mutedSmall}>Style: {style}</p>
+
               <p style={mutedSmall}>Audience: {audience}</p>
+
               <p style={mutedSmall}>User: {userEmail}</p>
+
+              {selectedText && (
+                <p style={mutedSmall}>Last selected: {selectedText}</p>
+              )}
             </div>
 
             <button onClick={logout} style={logoutBtn}>
@@ -582,12 +836,23 @@ export default function BuilderPage() {
       <section style={stageWrap}>
         <div ref={previewOuterRef} style={stage}>
           {previewHtml ? (
-            <div style={{ ...canvas, transform: `scale(${scale})` }}>
-              <iframe srcDoc={previewHtml} style={iframe} sandbox="allow-same-origin allow-scripts" />
+            <div
+              style={{
+                ...canvas,
+                transform: `scale(${scale})`,
+              }}
+            >
+              <iframe
+                ref={iframeRef}
+                srcDoc={previewHtml}
+                style={iframe}
+                sandbox="allow-same-origin allow-scripts"
+              />
             </div>
           ) : (
             <div style={empty}>
               <h2>Start building</h2>
+
               <p>Use the chat below to build your website.</p>
             </div>
           )}
@@ -597,17 +862,19 @@ export default function BuilderPage() {
       <footer style={bottomBar}>
         <div style={chatStrip}>
           <div style={miniChat}>
-            {messages.slice(-3).map((m, i) => (
+            {messages.slice(-4).map((m, i) => (
               <div key={i} style={miniMessage}>
                 <b>{m.role === "user" ? "You" : "AI"}:</b> {m.text}
               </div>
             ))}
+
             {loading && (
               <div style={thinking}>
                 <span style={pulse} />
-                Agent is working
+                Streaming generation...
               </div>
             )}
+
             <div ref={messagesEndRef} />
           </div>
 
@@ -615,15 +882,21 @@ export default function BuilderPage() {
             <textarea
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              placeholder={html ? "Ask AI to change the site..." : "Describe what to build..."}
+              placeholder={
+                html
+                  ? "Ask AI to change the site..."
+                  : "Describe what to build..."
+              }
               style={textarea}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
+
                   edit();
                 }
               }}
             />
+
             <button onClick={edit} disabled={loading} style={send}>
               ↑
             </button>
@@ -817,7 +1090,7 @@ const menu: React.CSSProperties = {
   position: "absolute",
   right: 18,
   top: 66,
-  width: 360,
+  width: 380,
   maxHeight: "calc(100vh - 90px)",
   overflowY: "auto",
   padding: 18,
@@ -984,6 +1257,14 @@ const projectsBox: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,.06)",
 };
 
+const leadsBox: React.CSSProperties = {
+  marginTop: 18,
+  padding: 14,
+  borderRadius: 18,
+  background: "#111114",
+  border: "1px solid rgba(34,197,94,.16)",
+};
+
 const factsBox: React.CSSProperties = {
   marginTop: 18,
   padding: 14,
@@ -1017,6 +1298,33 @@ const projectCard: React.CSSProperties = {
   textAlign: "left",
   display: "grid",
   gap: 4,
+};
+
+const leadCard: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 14,
+  border: "1px solid rgba(34,197,94,.16)",
+  background: "rgba(34,197,94,.06)",
+  color: "#fff",
+  display: "grid",
+  gap: 5,
+};
+
+const leadSite: React.CSSProperties = {
+  color: "#86efac",
+  fontSize: 11,
+};
+
+const leadMessage: React.CSSProperties = {
+  margin: "6px 0",
+  color: "#d1d5db",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+const leadDate: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: 11,
 };
 
 const logoutBtn: React.CSSProperties = {
