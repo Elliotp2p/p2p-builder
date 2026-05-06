@@ -3,25 +3,29 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+function env(name: string) {
+  return (process.env[name] || "").replace(/\s+/g, "");
+}
+
+const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
+const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+
 async function getUser() {
   const cookieStore = await cookies();
 
-  const supabaseAuth = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
+  const supabaseAuth = createServerClient(supabaseUrl, publishableKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
       },
-    }
-  );
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set(name, value, options);
+        });
+      },
+    },
+  });
 
   const {
     data: { user },
@@ -30,10 +34,7 @@ async function getUser() {
   return user;
 }
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
 export async function POST(req: Request) {
   try {
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
     const fixedFiles: Record<string, string> = {};
 
     for (const key of Object.keys(htmlFiles)) {
-      fixedFiles[key] = htmlFiles[key].replaceAll("REPLACE_ID", id);
+      fixedFiles[key] = String(htmlFiles[key]).replaceAll("REPLACE_ID", id);
     }
 
     const { error } = await supabaseAdmin.from("sites").insert({
@@ -83,6 +84,9 @@ export async function POST(req: Request) {
       url: `/site/${id}`,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Unknown publish error" },
+      { status: 500 }
+    );
   }
 }
