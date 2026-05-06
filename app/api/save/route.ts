@@ -1,6 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 function env(name: string) {
@@ -11,35 +9,24 @@ const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
 const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
 const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
 
-async function getUser() {
-  const cookieStore = await cookies();
-
-  const supabaseAuth = createServerClient(supabaseUrl, publishableKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll() {
-        // Do nothing here.
-        // This prevents old broken Supabase cookie/header values from crashing publish.
-      },
-    },
-  });
-
-  const {
-    data: { user },
-  } = await supabaseAuth.auth.getUser();
-
-  return user;
-}
-
+const supabaseAuth = createClient(supabaseUrl, publishableKey);
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
 export async function POST(req: Request) {
   try {
-    const user = await getUser();
+    const authHeader = req.headers.get("authorization") || "";
+    const token = authHeader.replace("Bearer ", "").trim();
 
-    if (!user) {
+    if (!token) {
+      return NextResponse.json({ error: "Missing auth token" }, { status: 401 });
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAuth.auth.getUser(token);
+
+    if (userError || !user) {
       return NextResponse.json({ error: "Not logged in" }, { status: 401 });
     }
 
