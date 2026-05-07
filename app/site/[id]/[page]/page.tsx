@@ -41,11 +41,13 @@ export default async function SitePage({
 
   const fileName = `${page}.html`;
 
-  const html =
+  let html =
     data.html_files?.[fileName] ||
     data.html_files?.["index.html"] ||
     data.html ||
     "";
+
+  html = html.replaceAll("REPLACE_ID", id);
 
   return (
     <iframe
@@ -56,6 +58,7 @@ export default async function SitePage({
         border: "none",
         display: "block",
       }}
+      sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
     />
   );
 }

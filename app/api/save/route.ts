@@ -2,22 +2,39 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 function env(name: string) {
-  return (process.env[name] || "").replace(/\s+/g, "");
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing env var: ${name}`);
+  }
+
+  return value.replace(/\s+/g, "");
 }
 
 const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
 const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
 const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
 
-const supabaseAuth = createClient(supabaseUrl, publishableKey);
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+const supabaseAuth = createClient(supabaseUrl, publishableKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
 
 export async function GET() {
   return NextResponse.json({
     route: "save",
-    version: "token-auth-no-cookies-v2",
-    publishableStartsWith: publishableKey.slice(0, 18),
-    serviceStartsWith: serviceRoleKey.slice(0, 18),
+    version: "clean-save-route-v3",
+    publishableOk: Boolean(publishableKey),
+    serviceOk: Boolean(serviceRoleKey),
     serviceHasSpace: /\s/.test(serviceRoleKey),
   });
 }
@@ -25,7 +42,9 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get("authorization") || "";
-    const token = authHeader.replace("Bearer ", "").trim();
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : "";
 
     if (!token) {
       return NextResponse.json({ error: "Missing auth token" }, { status: 401 });

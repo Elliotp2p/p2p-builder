@@ -50,6 +50,7 @@ export default async function SiteHome({
         border: "none",
         display: "block",
       }}
+      sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
     />
   );
 }

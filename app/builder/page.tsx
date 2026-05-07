@@ -1,7 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const templates = [
   "SaaS Landing Page",
@@ -53,9 +53,13 @@ type Lead = {
 };
 
 export default function BuilderPage() {
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  const supabase = useMemo(
+    () =>
+      createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+      ),
+    []
   );
 
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -94,6 +98,33 @@ export default function BuilderPage() {
 
   const [scale, setScale] = useState(0.6);
   const [selectedText, setSelectedText] = useState("");
+
+  const getAccessToken = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    return session?.access_token || "";
+  };
+
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+    const token = await getAccessToken();
+
+    const existingHeaders = new Headers(options.headers || {});
+
+    if (!existingHeaders.has("Content-Type") && options.body) {
+      existingHeaders.set("Content-Type", "application/json");
+    }
+
+    if (token) {
+      existingHeaders.set("Authorization", `Bearer ${token}`);
+    }
+
+    return fetch(url, {
+      ...options,
+      headers: existingHeaders,
+    });
+  };
 
   const previewHtml = html
     ? html
@@ -224,6 +255,19 @@ export default function BuilderPage() {
   }, []);
 
   const readStream = async (res: Response) => {
+    if (!res.ok) {
+      let errorMessage = "Request failed";
+
+      try {
+        const data = await res.json();
+        errorMessage = data.error || errorMessage;
+      } catch {
+        errorMessage = await res.text();
+      }
+
+      throw new Error(errorMessage);
+    }
+
     const reader = res.body?.getReader();
     if (!reader) throw new Error("No stream reader");
 
@@ -302,15 +346,35 @@ export default function BuilderPage() {
   };
 
   const loadProjects = async () => {
-    const res = await fetch("/api/sites");
-    const data = await res.json();
-    setProjects(data.sites || []);
+    try {
+      const res = await authFetch("/api/sites");
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error(data.error || "Failed loading projects");
+        return;
+      }
+
+      setProjects(data.sites || []);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const loadLeads = async () => {
-    const res = await fetch("/api/leads");
-    const data = await res.json();
-    setLeads(data.leads || []);
+    try {
+      const res = await authFetch("/api/leads");
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error(data.error || "Failed loading leads");
+        return;
+      }
+
+      setLeads(data.leads || []);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   useEffect(() => {
@@ -318,6 +382,7 @@ export default function BuilderPage() {
       loadProjects();
       loadLeads();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userEmail]);
 
   useEffect(() => {
@@ -328,9 +393,22 @@ export default function BuilderPage() {
 
     setStarted(true);
 
-    fetch(`/api/site?id=${id}`)
-      .then((res) => res.json())
-      .then((data) => {
+    const loadSite = async () => {
+      try {
+        const res = await authFetch(`/api/site?id=${id}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          setStatus("Load error");
+          setMessages([
+            {
+              role: "ai",
+              text: "Could not load this project: " + (data.error || "Unknown error"),
+            },
+          ]);
+          return;
+        }
+
         if (data.site) {
           const loadedFiles = data.site.html_files || {
             "index.html": data.site.html,
@@ -348,7 +426,19 @@ export default function BuilderPage() {
             },
           ]);
         }
-      });
+      } catch (error: any) {
+        setStatus("Load error");
+        setMessages([
+          {
+            role: "ai",
+            text: "Could not load this project: " + (error.message || "Unknown error"),
+          },
+        ]);
+      }
+    };
+
+    loadSite();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const addUser = (text: string) => {
@@ -367,11 +457,8 @@ export default function BuilderPage() {
     addUser(finalProblem);
 
     try {
-      const res = await fetch("/api/coach", {
+      const res = await authFetch("/api/coach", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           problem: finalProblem,
           template,
@@ -385,13 +472,13 @@ export default function BuilderPage() {
 
       await readStream(res);
       setStatus("Preview updated");
-    } catch {
+    } catch (error: any) {
       setStatus("Error");
       setMessages((m) => [
         ...m,
         {
           role: "ai",
-          text: "Network error. Try again with a shorter prompt.",
+          text: "Build error: " + (error.message || "Try again with a shorter prompt."),
         },
       ]);
     }
@@ -415,11 +502,8 @@ export default function BuilderPage() {
     addUser(instruction);
 
     try {
-      const res = await fetch("/api/coach", {
+      const res = await authFetch("/api/coach", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           editWebsite: true,
           currentHtml: html,
@@ -432,13 +516,13 @@ export default function BuilderPage() {
 
       await readStream(res);
       setStatus("Edited");
-    } catch {
+    } catch (error: any) {
       setStatus("Error");
       setMessages((m) => [
         ...m,
         {
           role: "ai",
-          text: "Network error while editing.",
+          text: "Edit error: " + (error.message || "Network error while editing."),
         },
       ]);
     }
@@ -461,65 +545,56 @@ export default function BuilderPage() {
       },
     ]);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const res = await authFetch("/api/save", {
+        method: "POST",
+        body: JSON.stringify({
+          html: files["index.html"],
+          files,
+          name: problem,
+          problem,
+          template,
+        }),
+      });
 
-    if (!session?.access_token) {
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStatus("Publish error");
+        setMessages((m) => [
+          ...m,
+          {
+            role: "ai",
+            text: "Publish error: " + (data.error || "Unknown error"),
+          },
+        ]);
+        return;
+      }
+
+      const fullUrl = window.location.origin + data.url;
+
+      setLink(fullUrl);
+      setStatus("Published");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: "Published. Your multi-page live link is ready.",
+        },
+      ]);
+
+      loadProjects();
+      loadLeads();
+    } catch (error: any) {
       setStatus("Publish error");
       setMessages((m) => [
         ...m,
         {
           role: "ai",
-          text: "Publish error: You are not logged in.",
+          text: "Publish error: " + (error.message || "Unknown publish error"),
         },
       ]);
-      return;
     }
-
-    const res = await fetch("/api/save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        html: files["index.html"],
-        files,
-        name: problem,
-        problem,
-        template,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setStatus("Publish error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: "Publish error: " + data.error,
-        },
-      ]);
-      return;
-    }
-
-    const fullUrl = window.location.origin + data.url;
-
-    setLink(fullUrl);
-    setStatus("Published");
-    setMessages((m) => [
-      ...m,
-      {
-        role: "ai",
-        text: "Published. Your multi-page live link is ready.",
-      },
-    ]);
-
-    loadProjects();
-    loadLeads();
   };
 
   const openProject = (id: string) => {
@@ -651,8 +726,7 @@ export default function BuilderPage() {
           <div>
             <strong>Problem to Profit</strong>
             <p style={mutedSmall}>
-              {status} · {activeFile} · {Math.round(scale * 100)}% ·{" "}
-              {userEmail}
+              {status} · {activeFile} · {Math.round(scale * 100)}% · {userEmail}
             </p>
           </div>
         </div>
@@ -713,11 +787,7 @@ export default function BuilderPage() {
             />
 
             <label style={label}>Style</label>
-            <input
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              style={field}
-            />
+            <input value={style} onChange={(e) => setStyle(e.target.value)} style={field} />
 
             <label style={label}>Audience</label>
             <input
@@ -751,16 +821,10 @@ export default function BuilderPage() {
               </div>
 
               <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-                {projects.length === 0 && (
-                  <p style={mutedSmall}>No projects yet.</p>
-                )}
+                {projects.length === 0 && <p style={mutedSmall}>No projects yet.</p>}
 
                 {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => openProject(p.id)}
-                    style={projectCard}
-                  >
+                  <button key={p.id} onClick={() => openProject(p.id)} style={projectCard}>
                     <strong>{p.name || "Untitled project"}</strong>
                     <span style={mutedSmall}>{p.template}</span>
                     <span style={{ color: "#64748b", fontSize: 11 }}>
@@ -779,9 +843,7 @@ export default function BuilderPage() {
                 </button>
               </div>
 
-              <p style={mutedSmall}>
-                Messages collected from your published sites.
-              </p>
+              <p style={mutedSmall}>Messages collected from your published sites.</p>
 
               <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
                 {leads.length === 0 && <p style={mutedSmall}>No leads yet.</p>}
@@ -812,9 +874,7 @@ export default function BuilderPage() {
               <p style={mutedSmall}>Audience: {audience}</p>
               <p style={mutedSmall}>User: {userEmail}</p>
 
-              {selectedText && (
-                <p style={mutedSmall}>Last selected: {selectedText}</p>
-              )}
+              {selectedText && <p style={mutedSmall}>Last selected: {selectedText}</p>}
             </div>
 
             <button onClick={logout} style={logoutBtn}>
@@ -872,11 +932,7 @@ export default function BuilderPage() {
             <textarea
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              placeholder={
-                html
-                  ? "Ask AI to change the site..."
-                  : "Describe what to build..."
-              }
+              placeholder={html ? "Ask AI to change the site..." : "Describe what to build..."}
               style={textarea}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {

@@ -3,9 +3,7 @@ import OpenAI from "openai";
 export const runtime = "nodejs";
 
 const client = process.env.OPENAI_API_KEY
-  ? new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
 function clean(text: string) {
@@ -14,48 +12,6 @@ function clean(text: string) {
     .replace(/```html/g, "")
     .replace(/```/g, "")
     .trim();
-}
-
-function fallbackHtml(message: string) {
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="UTF-8" />
-<title>Error</title>
-<style>
-body{
-margin:0;
-font-family:Inter,Arial;
-background:#020617;
-color:white;
-display:grid;
-place-items:center;
-min-height:100vh;
-padding:40px;
-}
-.card{
-max-width:760px;
-padding:40px;
-border-radius:24px;
-background:rgba(255,255,255,.08);
-}
-h1{
-font-size:48px;
-margin-bottom:12px;
-}
-p{
-line-height:1.7;
-color:#cbd5e1;
-}
-</style>
-</head>
-<body>
-<div class="card">
-<h1>Generation failed</h1>
-<p>${message}</p>
-</div>
-</body>
-</html>`;
 }
 
 function safeParseJSON(raw: string) {
@@ -75,12 +31,32 @@ function safeParseJSON(raw: string) {
   }
 }
 
+function fallbackHtml(message: string) {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Generation failed</title>
+<style>
+body{margin:0;font-family:Inter,Arial;background:#020617;color:white;display:grid;place-items:center;min-height:100vh;padding:40px}
+.card{max-width:760px;padding:40px;border-radius:24px;background:rgba(255,255,255,.08)}
+h1{font-size:48px;margin-bottom:12px}
+p{line-height:1.7;color:#cbd5e1}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Generation failed</h1>
+<p>${message}</p>
+</div>
+</body>
+</html>`;
+}
+
 export async function POST(req: Request) {
   try {
     if (!client) {
-      return Response.json({
-        error: "Missing OpenAI API key",
-      });
+      return Response.json({ error: "Missing OpenAI API key" }, { status: 500 });
     }
 
     const body = await req.json();
@@ -102,21 +78,14 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         const send = (data: any) => {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
-          );
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         };
 
         try {
-          send({
-            type: "status",
-            text: "Thinking...",
-          });
+          send({ type: "status", text: "Thinking..." });
 
-          let prompt = "";
-
-          if (editWebsite) {
-            prompt = `
+          const prompt = editWebsite
+            ? `
 Return ONLY valid JSON. No markdown.
 
 You are editing a generated multi-page startup website.
@@ -147,30 +116,27 @@ Rules:
 - No markdown.
 - No external scripts.
 - No external images.
-- Keep layout premium, modern, clean.
-- Every visible CTA should be a working <a href=""> link when possible.
+- NEVER include Supabase keys.
+- NEVER include sb_secret.
+- NEVER include Authorization headers.
+- NEVER include Bearer tokens.
+- Do not use JavaScript fetch for forms.
 - Navigation links:
   Home = /site/REPLACE_ID
   Pricing = /site/REPLACE_ID/pricing
   About = /site/REPLACE_ID/about
   Contact = /site/REPLACE_ID/contact
 
-DATABASE FORM RULES:
-- If editing contact.html or adding a contact/lead/demo form, the form MUST submit to /api/leads.
-- Use method="POST".
-- Include hidden input:
+Contact form rules:
+<form method="POST" action="/api/leads">
   <input type="hidden" name="site_id" value="REPLACE_ID" />
-- Use input names exactly:
-  name="name"
-  name="email"
-  name="message"
-- The submit control should be:
+  <input name="name" />
+  <input name="email" type="email" />
+  <textarea name="message"></textarea>
   <button type="submit">Send message</button>
-- Do not use JavaScript for form submission.
-- Do not use mailto for the main contact form.
-`;
-          } else {
-            prompt = `
+</form>
+`
+            : `
 Return ONLY valid JSON. No markdown.
 
 Build a PREMIUM multi-page startup website.
@@ -206,135 +172,67 @@ GLOBAL RULES:
 - No markdown.
 - No external images.
 - No external scripts.
-- No emojis.
+- No JavaScript fetch.
+- No Supabase code.
+- NEVER include Supabase keys.
+- NEVER include sb_secret.
+- NEVER include Authorization headers.
+- NEVER include Bearer tokens.
 - Full-width sections.
 - Body CSS must include margin:0; width:100%; min-height:100vh.
-- Do not use transform: scale().
-- Do not use zoom.
 - Premium startup quality.
-- Strong typography.
-- Strong hero.
-- Strong CTA.
-- Modern cards, gradients, mockups.
-- Compact enough to generate quickly.
 
 NAVIGATION:
-Every page must include nav links:
 Home = /site/REPLACE_ID
 Pricing = /site/REPLACE_ID/pricing
 About = /site/REPLACE_ID/about
 Contact = /site/REPLACE_ID/contact
 
-BUTTON + CTA RULES:
-- Every visible button must work.
-- Prefer <a class="button" href="...">Text</a> for CTAs.
-- Do not create dead buttons.
-- Do not use JavaScript onclick.
-- "Get started", "Start free", "View pricing", "Choose plan", "See plans" link to /site/REPLACE_ID/pricing.
-- "Book demo", "Contact sales", "Talk to us", "Schedule call", "Request demo" link to /site/REPLACE_ID/contact.
-- "Learn more", "About us", "Our story" link to /site/REPLACE_ID/about.
-- Pricing card CTAs should link to /site/REPLACE_ID/contact.
+CTA RULES:
+- Use <a href=""> for CTAs.
+- No dead buttons.
+- Pricing CTAs link to /site/REPLACE_ID/contact.
+- Demo/contact CTAs link to /site/REPLACE_ID/contact.
 
-DATABASE FORM RULES:
-contact.html MUST include a real working lead/contact form.
-The form must look premium and must be exactly this behavior:
+CONTACT FORM:
+contact.html MUST include this real form:
 <form method="POST" action="/api/leads">
   <input type="hidden" name="site_id" value="REPLACE_ID" />
-  <input name="name" ... />
-  <input name="email" type="email" ... />
-  <textarea name="message" ...></textarea>
+  <input name="name" />
+  <input name="email" type="email" />
+  <textarea name="message"></textarea>
   <button type="submit">Send message</button>
 </form>
-
-Important:
-- Do not use mailto as the main form.
-- Do not use JavaScript for the form.
-- Do not remove the hidden site_id field.
-- The contact form must be styled beautifully with CSS.
-- The submit button must be a real button type="submit".
-
-PAGE CONTENT:
-index.html:
-- Hero
-- product mockup
-- trust/social proof
-- features
-- how it works
-- CTA
-- footer
-
-pricing.html:
-- pricing hero
-- 3 pricing cards
-- FAQ
-- CTA
-- footer
-
-about.html:
-- mission
-- why now
-- story
-- principles/team-style section
-- CTA
-- footer
-
-contact.html:
-- contact hero
-- real database form that posts to /api/leads
-- contact methods
-- FAQ
-- CTA/footer
 `;
-          }
 
           send({
             type: "status",
-            text: editWebsite
-              ? "Editing website..."
-              : "Generating website...",
+            text: editWebsite ? "Editing website..." : "Generating website...",
           });
 
           const completion = await client.chat.completions.create({
             model: "gpt-4.1-mini",
-            temperature: editWebsite ? 0.45 : 0.7,
+            temperature: editWebsite ? 0.35 : 0.65,
             max_tokens: 14000,
-            response_format: {
-              type: "json_object",
-            },
-            messages: [
-              {
-                role: "user",
-                content: prompt,
-              },
-            ],
+            response_format: { type: "json_object" },
+            messages: [{ role: "user", content: prompt }],
           });
 
           const raw = completion.choices[0].message.content || "{}";
           const parsed = safeParseJSON(raw);
 
-          send({
-            type: "files",
-            files: parsed.files || {},
-          });
-
-          send({
-            type: "done",
-          });
+          send({ type: "files", files: parsed.files || {} });
+          send({ type: "done" });
 
           controller.close();
         } catch (e: any) {
-          send({
-            type: "error",
-            text: e.message || "Unknown error",
-          });
-
+          send({ type: "error", text: e.message || "Unknown error" });
           send({
             type: "files",
             files: {
               "index.html": fallbackHtml(e.message || "Unknown error"),
             },
           });
-
           controller.close();
         }
       },
@@ -348,8 +246,6 @@ contact.html:
       },
     });
   } catch (e: any) {
-    return Response.json({
-      error: e.message,
-    });
+    return Response.json({ error: e.message }, { status: 500 });
   }
 }

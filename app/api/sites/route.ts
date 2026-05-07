@@ -8,7 +8,7 @@ function env(name: string) {
     throw new Error(`Missing env var: ${name}`);
   }
 
-  return value.trim();
+  return value.replace(/\s+/g, "");
 }
 
 const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
@@ -30,7 +30,8 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 });
 
 async function getUserFromRequest(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") ?? "";
+  const authHeader = req.headers.get("authorization") || "";
+
   const token = authHeader.startsWith("Bearer ")
     ? authHeader.slice("Bearer ".length).trim()
     : "";
@@ -52,21 +53,45 @@ async function getUserFromRequest(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const user = await getUserFromRequest(req);
+  try {
+    const user = await getUserFromRequest(req);
 
-  if (!user) {
-    return NextResponse.json({ sites: [] });
+    if (!user) {
+      return NextResponse.json({
+        sites: [],
+      });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("sites")
+      .select("id, name, problem, template, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", {
+        ascending: false,
+      });
+
+    if (error) {
+      return NextResponse.json(
+        {
+          error: error.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    return NextResponse.json({
+      sites: data || [],
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      {
+        error: error.message || "Unknown sites error",
+      },
+      {
+        status: 500,
+      }
+    );
   }
-
-  const { data, error } = await supabaseAdmin
-    .from("sites")
-    .select("id, name, problem, template, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ sites: data ?? [] });
 }
