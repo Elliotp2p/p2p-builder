@@ -2,8 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
+  process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
 );
 
 export default async function SiteHome({
@@ -21,12 +21,17 @@ export default async function SiteHome({
 
   if (error || !data) notFound();
 
-  const html = data.html_files?.["index.html"] || data.html;
+  const html = data.html_files?.["index.html"] || data.html || "";
 
   return (
     <iframe
       srcDoc={html}
-      style={{ width: "100vw", height: "100vh", border: "none", display: "block" }}
+      style={{
+        width: "100vw",
+        height: "100vh",
+        border: "none",
+        display: "block",
+      }}
     />
   );
 }
