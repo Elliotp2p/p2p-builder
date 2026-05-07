@@ -1,9 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 
+function env(name: string) {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing env var: ${name}`);
+  }
+
+  return value.replace(/\s+/g, "");
+}
+
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-  process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
+  env("NEXT_PUBLIC_SUPABASE_URL"),
+  env("SUPABASE_SERVICE_ROLE_KEY"),
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }
 );
 
 export default async function SiteHome({
@@ -19,7 +35,9 @@ export default async function SiteHome({
     .eq("id", id)
     .single();
 
-  if (error || !data) notFound();
+  if (error || !data) {
+    notFound();
+  }
 
   const html = data.html_files?.["index.html"] || data.html || "";
 

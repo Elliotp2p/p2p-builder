@@ -1,9 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 
+function env(name: string) {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing env var: ${name}`);
+  }
+
+  return value.replace(/\s+/g, "");
+}
+
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-  process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
+  env("NEXT_PUBLIC_SUPABASE_URL"),
+  env("SUPABASE_SERVICE_ROLE_KEY"),
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }
 );
 
 export default async function SitePage({
@@ -15,7 +31,7 @@ export default async function SitePage({
 
   const { data, error } = await supabase
     .from("sites")
-    .select("html_files")
+    .select("html, html_files")
     .eq("id", id)
     .single();
 
@@ -28,6 +44,7 @@ export default async function SitePage({
   const html =
     data.html_files?.[fileName] ||
     data.html_files?.["index.html"] ||
+    data.html ||
     "";
 
   return (

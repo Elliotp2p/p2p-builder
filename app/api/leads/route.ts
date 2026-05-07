@@ -8,7 +8,7 @@ function env(name: string) {
     throw new Error(`Missing env var: ${name}`);
   }
 
-  return value.trim();
+  return value.replace(/\s+/g, "");
 }
 
 const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
