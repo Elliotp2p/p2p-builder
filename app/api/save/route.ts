@@ -3,14 +3,23 @@ import { NextResponse } from "next/server";
 
 function env(name: string) {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing env var: ${name}`);
+
+  if (!value) {
+    throw new Error(`Missing env var: ${name}`);
+  }
+
   return value.replace(/[\s\r\n\t]+/g, "");
 }
 
 export async function GET() {
+  const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+
   return NextResponse.json({
     route: "save",
-    version: "clean-env-runtime-v3",
+    version: "lazy-supabase-clients-v4",
+    serviceStartsWith: serviceRoleKey.slice(0, 18),
+    serviceHasWhitespace: /[\s\r\n\t]/.test(serviceRoleKey),
+    serviceLength: serviceRoleKey.length,
   });
 }
 
@@ -21,11 +30,17 @@ export async function POST(req: Request) {
     const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
 
     const supabaseAuth = createClient(supabaseUrl, publishableKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
     });
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
     });
 
     const authHeader = req.headers.get("authorization") || "";
@@ -50,10 +65,15 @@ export async function POST(req: Request) {
 
     const id = Math.random().toString(36).slice(2, 8);
 
-    const htmlFiles = files || { "index.html": html };
+    const htmlFiles = files || {
+      "index.html": html,
+    };
 
     if (!htmlFiles["index.html"]) {
-      return NextResponse.json({ error: "No index.html received" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No index.html received" },
+        { status: 400 }
+      );
     }
 
     const fixedFiles: Record<string, string> = {};
