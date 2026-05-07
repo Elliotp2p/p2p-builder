@@ -2,25 +2,47 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 function env(name: string) {
-  return (process.env[name] || "").replace(/\s+/g, "");
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing env var: ${name}`);
+  }
+
+  return value.trim();
 }
 
 const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
 const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
 const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
 
-const supabaseAuth = createClient(supabaseUrl, publishableKey);
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+const supabaseAuth = createClient(supabaseUrl, publishableKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
 
 async function getUser(req: Request) {
   const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.replace("Bearer ", "").trim();
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
 
   if (!token) return null;
 
   const {
     data: { user },
+    error,
   } = await supabaseAuth.auth.getUser(token);
+
+  if (error || !user) return null;
 
   return user;
 }
