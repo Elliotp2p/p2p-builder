@@ -661,3 +661,270 @@ export default function BuilderPage() {
       ]);
     }
   };
+    const openProject = (id: string) => {
+    window.location.href = `/builder?id=${id}`;
+  };
+
+  if (checkingAuth) {
+    return (
+      <main style={startPage}>
+        <div style={startCard}>
+          <div style={mark}>P</div>
+          <h1 style={startTitle}>Loading...</h1>
+        </div>
+      </main>
+    );
+  }
+
+  if (!userEmail) {
+    return (
+      <main style={startPage}>
+        <div style={startCard}>
+          <div style={mark}>P</div>
+          <p style={eyebrow}>Problem to Profit AI</p>
+          <h1 style={startTitle}>Log in to build</h1>
+
+          <button onClick={login} style={startButton}>
+            Continue with Google
+          </button>
+
+          <p style={mutedSmall}>{loginStatus}</p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main style={app}>
+      <header style={topbar}>
+        <div style={brand}>
+          <div style={markSmall}>P</div>
+
+          <div>
+            <strong>Problem to Profit</strong>
+
+            <p style={mutedSmall}>
+              {status} · {activeFile} · {userEmail}
+            </p>
+          </div>
+        </div>
+
+        <div style={topActions}>
+          <button
+            onClick={publish}
+            disabled={loading}
+            style={publishBtn}
+          >
+            Publish
+          </button>
+
+          <button
+            onClick={logout}
+            style={ghost}
+          >
+            Logout
+          </button>
+        </div>
+      </header>
+
+      <section style={stageWrap}>
+        <div
+          ref={previewOuterRef}
+          style={stage}
+        >
+          {previewHtml ? (
+            <div
+              style={{
+                ...canvas,
+                transform: `scale(${scale})`,
+              }}
+            >
+              <iframe
+                ref={iframeRef}
+                srcDoc={previewHtml}
+                style={iframe}
+                sandbox="allow-same-origin allow-scripts"
+              />
+            </div>
+          ) : (
+            <div style={empty}>
+              <h2>No preview yet</h2>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <footer style={bottomBar}>
+        <div style={composer}>
+          <textarea
+            value={chatInput}
+            onChange={(e) =>
+              setChatInput(e.target.value)
+            }
+            placeholder="Ask AI to change the site..."
+            style={textarea}
+          />
+
+          <button
+            onClick={edit}
+            disabled={loading}
+            style={send}
+          >
+            ↑
+          </button>
+        </div>
+      </footer>
+    </main>
+  );
+}
+
+const startPage: React.CSSProperties = {
+  minHeight: "100vh",
+  display: "grid",
+  placeItems: "center",
+  background: "#09090b",
+  color: "#fff",
+};
+
+const startCard: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 700,
+  padding: 32,
+};
+
+const startTitle: React.CSSProperties = {
+  fontSize: 52,
+};
+
+const startButton: React.CSSProperties = {
+  padding: 16,
+  borderRadius: 999,
+  border: "none",
+  background: "#22c55e",
+  color: "#052e16",
+  cursor: "pointer",
+};
+
+const app: React.CSSProperties = {
+  height: "100vh",
+  display: "grid",
+  gridTemplateRows: "auto 1fr auto",
+  background: "#09090b",
+  color: "#fff",
+};
+
+const topbar: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  padding: 18,
+  borderBottom: "1px solid rgba(255,255,255,.08)",
+};
+
+const brand: React.CSSProperties = {
+  display: "flex",
+  gap: 12,
+  alignItems: "center",
+};
+
+const mark: React.CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 14,
+  background: "#22c55e",
+  color: "#052e16",
+  display: "grid",
+  placeItems: "center",
+};
+
+const markSmall: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  borderRadius: 12,
+  background: "#22c55e",
+  color: "#052e16",
+  display: "grid",
+  placeItems: "center",
+};
+
+const topActions: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+};
+
+const publishBtn: React.CSSProperties = {
+  padding: "10px 16px",
+  borderRadius: 999,
+  border: "none",
+  background: "#22c55e",
+  color: "#052e16",
+  cursor: "pointer",
+};
+
+const ghost: React.CSSProperties = {
+  padding: "10px 16px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,.1)",
+  background: "transparent",
+  color: "#fff",
+};
+
+const stageWrap: React.CSSProperties = {
+  overflow: "auto",
+  padding: 20,
+};
+
+const stage: React.CSSProperties = {
+  minHeight: "100%",
+};
+
+const canvas: React.CSSProperties = {
+  width: 1440,
+  background: "#fff",
+};
+
+const iframe: React.CSSProperties = {
+  width: 1440,
+  height: 1000,
+  border: "none",
+};
+
+const empty: React.CSSProperties = {
+  display: "grid",
+  placeItems: "center",
+  height: "100%",
+};
+
+const bottomBar: React.CSSProperties = {
+  padding: 14,
+  borderTop: "1px solid rgba(255,255,255,.08)",
+};
+
+const composer: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 48px",
+  gap: 10,
+};
+
+const textarea: React.CSSProperties = {
+  height: 100,
+  padding: 14,
+  borderRadius: 18,
+  background: "#111114",
+  color: "#fff",
+  border: "1px solid rgba(255,255,255,.08)",
+};
+
+const send: React.CSSProperties = {
+  borderRadius: 999,
+  border: "none",
+  background: "#fff",
+  color: "#000",
+};
+
+const mutedSmall: React.CSSProperties = {
+  color: "#9ca3af",
+};
+
+const eyebrow: React.CSSProperties = {
+  color: "#86efac",
+};
