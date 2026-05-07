@@ -3,44 +3,31 @@ import { NextResponse } from "next/server";
 
 function env(name: string) {
   const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`Missing env var: ${name}`);
-  }
-
-  return value.replace(/\s+/g, "");
+  if (!value) throw new Error(`Missing env var: ${name}`);
+  return value.replace(/[\s\r\n\t]+/g, "");
 }
-
-const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
-const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
-const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
-
-const supabaseAuth = createClient(supabaseUrl, publishableKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
 
 export async function GET() {
   return NextResponse.json({
     route: "save",
-    version: "clean-save-route-v3",
-    publishableOk: Boolean(publishableKey),
-    serviceOk: Boolean(serviceRoleKey),
-    serviceHasSpace: /\s/.test(serviceRoleKey),
+    version: "clean-env-runtime-v3",
   });
 }
 
 export async function POST(req: Request) {
   try {
+    const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
+    const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+    const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+
+    const supabaseAuth = createClient(supabaseUrl, publishableKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
     const authHeader = req.headers.get("authorization") || "";
     const token = authHeader.startsWith("Bearer ")
       ? authHeader.slice("Bearer ".length).trim()
@@ -63,15 +50,10 @@ export async function POST(req: Request) {
 
     const id = Math.random().toString(36).slice(2, 8);
 
-    const htmlFiles = files || {
-      "index.html": html,
-    };
+    const htmlFiles = files || { "index.html": html };
 
     if (!htmlFiles["index.html"]) {
-      return NextResponse.json(
-        { error: "No index.html received" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No index.html received" }, { status: 400 });
     }
 
     const fixedFiles: Record<string, string> = {};
