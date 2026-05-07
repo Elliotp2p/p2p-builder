@@ -1,39 +1,29 @@
-import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-async function getUser() {
-  const cookieStore = await cookies();
+function env(name: string) {
+  return (process.env[name] || "").replace(/\s+/g, "");
+}
 
-  const supabaseAuth = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
+const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+
+const supabaseAuth = createClient(supabaseUrl, publishableKey);
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+async function getUser(req: Request) {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace("Bearer ", "").trim();
+
+  if (!token) return null;
 
   const {
     data: { user },
-  } = await supabaseAuth.auth.getUser();
+  } = await supabaseAuth.auth.getUser(token);
 
   return user;
 }
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export async function POST(req: Request) {
   try {
@@ -100,14 +90,17 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "text/html" },
       }
     );
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Unknown lead submit error" },
+      { status: 500 }
+    );
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const user = await getUser();
+    const user = await getUser(req);
 
     if (!user) {
       return NextResponse.json({ leads: [] });
@@ -122,7 +115,7 @@ export async function GET() {
       return NextResponse.json({ error: sitesError.message }, { status: 500 });
     }
 
-    const siteIds = (sites || []).map((s) => s.id);
+    const siteIds = (sites || []).map((site) => site.id);
 
     if (siteIds.length === 0) {
       return NextResponse.json({ leads: [] });
@@ -140,11 +133,15 @@ export async function GET() {
 
     const leadsWithSite = (leads || []).map((lead) => ({
       ...lead,
-      site_name: sites?.find((s) => s.id === lead.site_id)?.name || lead.site_id,
+      site_name:
+        sites?.find((site) => site.id === lead.site_id)?.name || lead.site_id,
     }));
 
     return NextResponse.json({ leads: leadsWithSite });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Unknown leads error" },
+      { status: 500 }
+    );
   }
 }

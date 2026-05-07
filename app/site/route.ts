@@ -1,64 +1,53 @@
-import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-async function getUser() {
-  const cookieStore = await cookies();
+function env(name: string) {
+  return (process.env[name] || "").replace(/\s+/g, "");
+}
 
-  const supabaseAuth = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
+const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+
+const supabaseAuth = createClient(supabaseUrl, publishableKey);
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+async function getUser(req: Request) {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace("Bearer ", "").trim();
+
+  if (!token) return null;
 
   const {
     data: { user },
-  } = await supabaseAuth.auth.getUser();
+  } = await supabaseAuth.auth.getUser(token);
 
   return user;
 }
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function GET(req: Request) {
-  const user = await getUser();
+  try {
+    const user = await getUser(req);
 
-  if (!user) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+    if (!user) {
+      return NextResponse.json({ sites: [] });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("sites")
+      .select("id, name, problem, template, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ sites: data || [] });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Unknown sites error" },
+      { status: 500 }
+    );
   }
-
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-
-  if (!id) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("sites")
-    .select("*")
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ site: data });
 }

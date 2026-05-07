@@ -1,42 +1,58 @@
-import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-async function getUser() {
-  const cookieStore = await cookies();
+function env(name: string) {
+  const value = process.env[name];
 
-  const supabaseAuth = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+  if (!value) {
+    throw new Error(`Missing env var: ${name}`);
+  }
+
+  return value.trim();
+}
+
+const supabaseUrl = env("NEXT_PUBLIC_SUPABASE_URL");
+const publishableKey = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+
+const supabaseAuth = createClient(supabaseUrl, publishableKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+async function getUserFromRequest(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+
+  if (!token) {
+    return null;
+  }
 
   const {
     data: { user },
-  } = await supabaseAuth.auth.getUser();
+    error,
+  } = await supabaseAuth.auth.getUser(token);
+
+  if (error || !user) {
+    return null;
+  }
 
   return user;
 }
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-export async function GET() {
-  const user = await getUser();
+export async function GET(req: NextRequest) {
+  const user = await getUserFromRequest(req);
 
   if (!user) {
     return NextResponse.json({ sites: [] });
@@ -52,5 +68,5 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ sites: data });
+  return NextResponse.json({ sites: data ?? [] });
 }
