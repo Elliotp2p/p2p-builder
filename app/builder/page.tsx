@@ -355,6 +355,16 @@ export default function BuilderPage() {
           setMessages((m) => [...m, { role: "ai", text: payload.text }]);
         }
 
+        if (payload.type === "review") {
+          setMessages((m) => [
+            ...m,
+            {
+              role: "ai",
+              text: payload.text || "No review returned.",
+            },
+          ]);
+        }
+
         if (payload.type === "files") {
           const incomingFiles = payload.files || {};
 
@@ -513,7 +523,9 @@ export default function BuilderPage() {
         ...m,
         {
           role: "ai",
-          text: "Build error: " + (error.message || "Try again with a shorter prompt."),
+          text:
+            "Build error: " +
+            (error.message || "Try again with a shorter prompt."),
         },
       ]);
     }
@@ -557,7 +569,55 @@ export default function BuilderPage() {
         ...m,
         {
           role: "ai",
-          text: "Edit error: " + (error.message || "Network error while editing."),
+          text:
+            "Edit error: " +
+            (error.message || "Network error while editing."),
+        },
+      ]);
+    }
+
+    setLoading(false);
+  };
+
+  const reviewSite = async () => {
+    if (!html) {
+      setStatus("Generate first");
+      return;
+    }
+
+    setLoading(true);
+    setStatus("Reviewing site...");
+
+    setMessages((m) => [
+      ...m,
+      {
+        role: "user",
+        text: "Review this website",
+      },
+    ]);
+
+    try {
+      const res = await authFetch("/api/coach", {
+        method: "POST",
+        body: JSON.stringify({
+          reviewWebsite: true,
+          currentHtml: html,
+          problem,
+          template,
+          activeFile,
+          allFiles: files,
+        }),
+      });
+
+      await readStream(res);
+      setStatus("Review done");
+    } catch (error: any) {
+      setStatus("Review error");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: "Review error: " + (error.message || "Unknown error"),
         },
       ]);
     }
@@ -787,6 +847,10 @@ export default function BuilderPage() {
               {tab.label}
             </button>
           ))}
+
+          <button onClick={reviewSite} disabled={loading} style={reviewBtn}>
+            Review site
+          </button>
 
           <button onClick={() => runBuild()} disabled={loading} style={ghost}>
             Regenerate
@@ -1174,6 +1238,16 @@ const ghost: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const reviewBtn: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "1px solid rgba(134,239,172,.35)",
+  background: "rgba(34,197,94,.12)",
+  color: "#bbf7d0",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
 const publishBtn: React.CSSProperties = {
   padding: "10px 16px",
   borderRadius: 999,
@@ -1277,6 +1351,7 @@ const miniMessage: React.CSSProperties = {
   color: "#d1d5db",
   fontSize: 13,
   marginBottom: 8,
+  whiteSpace: "pre-wrap",
 };
 
 const composer: React.CSSProperties = {
