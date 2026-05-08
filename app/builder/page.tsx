@@ -1,7 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const templates = [
   "SaaS Landing Page",
@@ -53,9 +53,13 @@ type Lead = {
 };
 
 export default function BuilderPage() {
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  const supabase = useMemo(
+    () =>
+      createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+      ),
+    []
   );
 
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -76,6 +80,7 @@ export default function BuilderPage() {
 
   const [link, setLink] = useState("");
   const [status, setStatus] = useState("Ready");
+  const [lastSaved, setLastSaved] = useState("");
   const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -94,6 +99,49 @@ export default function BuilderPage() {
 
   const [scale, setScale] = useState(0.6);
   const [selectedText, setSelectedText] = useState("");
+
+  const getAccessToken = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    return session?.access_token || "";
+  };
+
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+    const token = await getAccessToken();
+    const headers = new Headers(options.headers || {});
+
+    if (options.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+
+    return fetch(url, {
+      ...options,
+      headers,
+    });
+  };
+
+  const saveDraftLocal = () => {
+    if (!files["index.html"]) return;
+
+    const draft = {
+      files,
+      activeFile,
+      problem,
+      template,
+      style,
+      audience,
+      savedAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem("p2p-builder-autosave", JSON.stringify(draft));
+    setLastSaved(new Date().toLocaleTimeString());
+  };
 
   const previewHtml = html
     ? html
@@ -163,6 +211,50 @@ export default function BuilderPage() {
   }, [supabase]);
 
   useEffect(() => {
+    const saved = localStorage.getItem("p2p-builder-autosave");
+    if (!saved) return;
+
+    try {
+      const draft = JSON.parse(saved);
+
+      if (draft?.files?.["index.html"]) {
+        setFiles(draft.files);
+        setActiveFile(draft.activeFile || "index.html");
+        setProblem(draft.problem || "");
+        setTemplate(draft.template || templates[0]);
+        setStyle(draft.style || styles[0]);
+        setAudience(draft.audience || "kunder som vill spara tid");
+        setStarted(true);
+        setStatus("Autosave restored");
+
+        if (draft.savedAt) {
+          setLastSaved(new Date(draft.savedAt).toLocaleTimeString());
+        }
+
+        setMessages([
+          {
+            role: "ai",
+            text: "Autosaved draft restored. You can continue editing or publish it.",
+          },
+        ]);
+      }
+    } catch {
+      localStorage.removeItem("p2p-builder-autosave");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!started) return;
+    if (!files["index.html"]) return;
+
+    const timeout = setTimeout(() => {
+      saveDraftLocal();
+    }, 2000);
+
+    return () => clearTimeout(timeout);
+  }, [files, problem, template, style, audience, activeFile, started]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -224,6 +316,19 @@ export default function BuilderPage() {
   }, []);
 
   const readStream = async (res: Response) => {
+    if (!res.ok) {
+      let errorMessage = "Request failed";
+
+      try {
+        const data = await res.json();
+        errorMessage = data.error || errorMessage;
+      } catch {
+        errorMessage = await res.text();
+      }
+
+      throw new Error(errorMessage);
+    }
+
     const reader = res.body?.getReader();
     if (!reader) throw new Error("No stream reader");
 
@@ -302,15 +407,35 @@ export default function BuilderPage() {
   };
 
   const loadProjects = async () => {
-    const res = await fetch("/api/sites");
-    const data = await res.json();
-    setProjects(data.sites || []);
+    try {
+      const res = await authFetch("/api/sites");
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error(data.error || "Failed loading projects");
+        return;
+      }
+
+      setProjects(data.sites || []);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const loadLeads = async () => {
-    const res = await fetch("/api/leads");
-    const data = await res.json();
-    setLeads(data.leads || []);
+    try {
+      const res = await authFetch("/api/leads");
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error(data.error || "Failed loading leads");
+        return;
+      }
+
+      setLeads(data.leads || []);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   useEffect(() => {
@@ -367,11 +492,8 @@ export default function BuilderPage() {
     addUser(finalProblem);
 
     try {
-      const res = await fetch("/api/coach", {
+      const res = await authFetch("/api/coach", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           problem: finalProblem,
           template,
@@ -385,13 +507,13 @@ export default function BuilderPage() {
 
       await readStream(res);
       setStatus("Preview updated");
-    } catch {
+    } catch (error: any) {
       setStatus("Error");
       setMessages((m) => [
         ...m,
         {
           role: "ai",
-          text: "Network error. Try again with a shorter prompt.",
+          text: "Build error: " + (error.message || "Try again with a shorter prompt."),
         },
       ]);
     }
@@ -415,11 +537,8 @@ export default function BuilderPage() {
     addUser(instruction);
 
     try {
-      const res = await fetch("/api/coach", {
+      const res = await authFetch("/api/coach", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           editWebsite: true,
           currentHtml: html,
@@ -432,13 +551,13 @@ export default function BuilderPage() {
 
       await readStream(res);
       setStatus("Edited");
-    } catch {
+    } catch (error: any) {
       setStatus("Error");
       setMessages((m) => [
         ...m,
         {
           role: "ai",
-          text: "Network error while editing.",
+          text: "Edit error: " + (error.message || "Network error while editing."),
         },
       ]);
     }
@@ -461,65 +580,59 @@ export default function BuilderPage() {
       },
     ]);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const res = await authFetch("/api/save", {
+        method: "POST",
+        body: JSON.stringify({
+          html: files["index.html"],
+          files,
+          name: problem,
+          problem,
+          template,
+        }),
+      });
 
-    if (!session?.access_token) {
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStatus("Publish error");
+        setMessages((m) => [
+          ...m,
+          {
+            role: "ai",
+            text: "Publish error: " + (data.error || "Unknown error"),
+          },
+        ]);
+        return;
+      }
+
+      const fullUrl = window.location.origin + data.url;
+
+      setLink(fullUrl);
+      setStatus("Published");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: "Published. Your multi-page live link is ready.",
+        },
+      ]);
+
+      localStorage.removeItem("p2p-builder-autosave");
+      setLastSaved("");
+
+      loadProjects();
+      loadLeads();
+    } catch (error: any) {
       setStatus("Publish error");
       setMessages((m) => [
         ...m,
         {
           role: "ai",
-          text: "Publish error: You are not logged in.",
+          text: "Publish error: " + (error.message || "Unknown publish error"),
         },
       ]);
-      return;
     }
-
-    const res = await fetch("/api/save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        html: files["index.html"],
-        files,
-        name: problem,
-        problem,
-        template,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setStatus("Publish error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: "Publish error: " + data.error,
-        },
-      ]);
-      return;
-    }
-
-    const fullUrl = window.location.origin + data.url;
-
-    setLink(fullUrl);
-    setStatus("Published");
-    setMessages((m) => [
-      ...m,
-      {
-        role: "ai",
-        text: "Published. Your multi-page live link is ready.",
-      },
-    ]);
-
-    loadProjects();
-    loadLeads();
   };
 
   const openProject = (id: string) => {
@@ -651,8 +764,8 @@ export default function BuilderPage() {
           <div>
             <strong>Problem to Profit</strong>
             <p style={mutedSmall}>
-              {status} · {activeFile} · {Math.round(scale * 100)}% ·{" "}
-              {userEmail}
+              {status} · {activeFile} · {Math.round(scale * 100)}% · Saved:{" "}
+              {lastSaved || "Not yet"} · {userEmail}
             </p>
           </div>
         </div>
@@ -725,6 +838,12 @@ export default function BuilderPage() {
               onChange={(e) => setAudience(e.target.value)}
               style={field}
             />
+
+            {lastSaved && (
+              <div style={linkBox}>
+                <p style={{ margin: 0 }}>Autosaved draft at {lastSaved}</p>
+              </div>
+            )}
 
             {link && (
               <div style={linkBox}>
@@ -811,6 +930,7 @@ export default function BuilderPage() {
               <p style={mutedSmall}>Style: {style}</p>
               <p style={mutedSmall}>Audience: {audience}</p>
               <p style={mutedSmall}>User: {userEmail}</p>
+              <p style={mutedSmall}>Autosaved: {lastSaved || "Not yet"}</p>
 
               {selectedText && (
                 <p style={mutedSmall}>Last selected: {selectedText}</p>
