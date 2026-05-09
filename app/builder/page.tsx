@@ -82,6 +82,7 @@ export default function BuilderPage() {
   const [status, setStatus] = useState("Ready");
   const [lastSaved, setLastSaved] = useState("");
   const [loading, setLoading] = useState(false);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
 
@@ -695,6 +696,57 @@ export default function BuilderPage() {
     }
   };
 
+  const deleteProject = async (id: string, name?: string) => {
+    const sure = window.confirm(
+      `Delete "${name || "this project"}"? This cannot be undone.`
+    );
+
+    if (!sure) return;
+
+    try {
+      setStatus("Deleting project...");
+
+      const res = await authFetch(`/api/sites?id=${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStatus("Delete error");
+        setMessages((m) => [
+          ...m,
+          {
+            role: "ai",
+            text: "Delete error: " + (data.error || "Unknown error"),
+          },
+        ]);
+        return;
+      }
+
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+      setLeads((prev) => prev.filter((lead) => lead.site_id !== id));
+      setStatus("Project deleted");
+
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: "Project deleted.",
+        },
+      ]);
+    } catch (error: any) {
+      setStatus("Delete error");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: "Delete error: " + (error.message || "Unknown error"),
+        },
+      ]);
+    }
+  };
+
   const openProject = (id: string) => {
     window.location.href = `/builder?id=${id}`;
   };
@@ -739,7 +791,8 @@ export default function BuilderPage() {
           <p style={eyebrow}>Problem to Profit AI</p>
           <h1 style={startTitle}>What should we build?</h1>
           <p style={startText}>
-            Choose the setup first. Then enter the builder with a clean workspace.
+            Choose the setup first. Then enter the builder with a clean
+            workspace.
           </p>
 
           <label style={label}>Problem / product idea</label>
@@ -939,17 +992,25 @@ export default function BuilderPage() {
                 )}
 
                 {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => openProject(p.id)}
-                    style={projectCard}
-                  >
-                    <strong>{p.name || "Untitled project"}</strong>
-                    <span style={mutedSmall}>{p.template}</span>
-                    <span style={{ color: "#64748b", fontSize: 11 }}>
-                      Open in builder
-                    </span>
-                  </button>
+                  <div key={p.id} style={projectCard}>
+                    <button
+                      onClick={() => openProject(p.id)}
+                      style={projectOpenBtn}
+                    >
+                      <strong>{p.name || "Untitled project"}</strong>
+                      <span style={mutedSmall}>{p.template}</span>
+                      <span style={{ color: "#64748b", fontSize: 11 }}>
+                        Open in builder
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => deleteProject(p.id, p.name)}
+                      style={deleteProjectBtn}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1478,10 +1539,30 @@ const projectCard: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,.08)",
   background: "rgba(255,255,255,.04)",
   color: "#fff",
+  display: "grid",
+  gap: 4,
+};
+
+const projectOpenBtn: React.CSSProperties = {
+  border: "none",
+  background: "transparent",
+  color: "#fff",
   cursor: "pointer",
   textAlign: "left",
   display: "grid",
   gap: 4,
+  padding: 0,
+};
+
+const deleteProjectBtn: React.CSSProperties = {
+  marginTop: 10,
+  padding: "8px 10px",
+  borderRadius: 999,
+  border: "1px solid rgba(239,68,68,.25)",
+  background: "rgba(239,68,68,.12)",
+  color: "#fecaca",
+  fontWeight: 900,
+  cursor: "pointer",
 };
 
 const leadCard: React.CSSProperties = {

@@ -30,8 +30,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 });
 
 async function getUserFromRequest(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") || "";
-
+  const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ")
     ? authHeader.slice("Bearer ".length).trim()
     : "";
@@ -53,45 +52,50 @@ async function getUserFromRequest(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  try {
-    const user = await getUserFromRequest(req);
+  const user = await getUserFromRequest(req);
 
-    if (!user) {
-      return NextResponse.json({
-        sites: [],
-      });
-    }
-
-    const { data, error } = await supabaseAdmin
-      .from("sites")
-      .select("id, name, problem, template, created_at")
-      .eq("user_id", user.id)
-      .order("created_at", {
-        ascending: false,
-      });
-
-    if (error) {
-      return NextResponse.json(
-        {
-          error: error.message,
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    return NextResponse.json({
-      sites: data || [],
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        error: error.message || "Unknown sites error",
-      },
-      {
-        status: 500,
-      }
-    );
+  if (!user) {
+    return NextResponse.json({ sites: [] });
   }
+
+  const { data, error } = await supabaseAdmin
+    .from("sites")
+    .select("id, name, problem, template, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ sites: data ?? [] });
+}
+
+export async function DELETE(req: NextRequest) {
+  const user = await getUserFromRequest(req);
+
+  if (!user) {
+    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "Missing site id" }, { status: 400 });
+  }
+
+  await supabaseAdmin.from("site_leads").delete().eq("site_id", id);
+
+  const { error } = await supabaseAdmin
+    .from("sites")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
