@@ -874,7 +874,7 @@ export default function BuilderPage() {
       <header style={topbar}>
         <div style={brand}>
           <div style={markSmall}>P</div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <strong>Problem to Profit</strong>
             <p style={mutedSmall}>
               {status} · {activeFile} · {Math.round(scale * 100)}% · Saved:{" "}
@@ -902,11 +902,11 @@ export default function BuilderPage() {
           ))}
 
           <button onClick={reviewSite} disabled={loading} style={reviewBtn}>
-            Review site
+            Review
           </button>
 
           <button onClick={() => runBuild()} disabled={loading} style={ghost}>
-            Regenerate
+            Regen
           </button>
 
           <button onClick={publish} disabled={loading} style={publishBtn}>
@@ -1239,18 +1239,22 @@ const app: React.CSSProperties = {
 
 const topbar: React.CSSProperties = {
   position: "relative",
-  padding: "14px 18px",
+  padding: "10px 12px",
   borderBottom: "1px solid rgba(255,255,255,.08)",
   background: "#0f0f12",
-  display: "flex",
-  justifyContent: "space-between",
+  display: "grid",
+  gridTemplateColumns: "minmax(160px, 1fr) auto",
+  gap: 10,
   alignItems: "center",
+  overflow: "visible",
 };
 
 const brand: React.CSSProperties = {
   display: "flex",
-  gap: 12,
+  gap: 10,
   alignItems: "center",
+  minWidth: 0,
+  overflow: "hidden",
 };
 
 const mark: React.CSSProperties = {
@@ -1262,78 +1266,94 @@ const mark: React.CSSProperties = {
   fontWeight: 950,
   display: "grid",
   placeItems: "center",
+  flexShrink: 0,
 };
 
 const markSmall: React.CSSProperties = {
-  width: 36,
-  height: 36,
+  width: 34,
+  height: 34,
   borderRadius: 12,
   background: "linear-gradient(135deg,#22c55e,#a7f3d0)",
   color: "#052e16",
   fontWeight: 950,
   display: "grid",
   placeItems: "center",
+  flexShrink: 0,
 };
 
 const topActions: React.CSSProperties = {
   display: "flex",
-  gap: 8,
+  gap: 6,
   alignItems: "center",
+  overflowX: "auto",
+  maxWidth: "62vw",
+  paddingBottom: 2,
+  scrollbarWidth: "none",
 };
 
 const tabBtn: React.CSSProperties = {
-  padding: "9px 13px",
+  padding: "8px 10px",
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,.08)",
   fontWeight: 800,
   cursor: "pointer",
+  whiteSpace: "nowrap",
+  fontSize: 12,
 };
 
 const ghost: React.CSSProperties = {
-  padding: "10px 14px",
+  padding: "9px 11px",
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,.1)",
   background: "rgba(255,255,255,.04)",
   color: "#fff",
   fontWeight: 800,
   cursor: "pointer",
+  whiteSpace: "nowrap",
+  fontSize: 12,
 };
 
 const reviewBtn: React.CSSProperties = {
-  padding: "10px 14px",
+  padding: "9px 11px",
   borderRadius: 999,
   border: "1px solid rgba(134,239,172,.35)",
   background: "rgba(34,197,94,.12)",
   color: "#bbf7d0",
   fontWeight: 900,
   cursor: "pointer",
+  whiteSpace: "nowrap",
+  fontSize: 12,
 };
 
 const publishBtn: React.CSSProperties = {
-  padding: "10px 16px",
+  padding: "9px 12px",
   borderRadius: 999,
   border: "none",
   background: "#22c55e",
   color: "#052e16",
   fontWeight: 950,
   cursor: "pointer",
+  whiteSpace: "nowrap",
+  fontSize: 12,
 };
 
 const dots: React.CSSProperties = {
-  width: 42,
-  height: 42,
+  minWidth: 38,
+  width: 38,
+  height: 38,
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,.1)",
   background: "rgba(255,255,255,.04)",
   color: "#fff",
-  fontSize: 24,
+  fontSize: 22,
   cursor: "pointer",
+  flexShrink: 0,
 };
 
 const menu: React.CSSProperties = {
   position: "absolute",
   right: 18,
-  top: 66,
+  top: 58,
   width: 380,
   maxHeight: "calc(100vh - 90px)",
   overflowY: "auto",
@@ -1448,6 +1468,9 @@ const mutedSmall: React.CSSProperties = {
   color: "#9ca3af",
   fontSize: 12,
   lineHeight: 1.45,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
 };
 
 const thinking: React.CSSProperties = {
