@@ -1243,7 +1243,7 @@ const topbar: React.CSSProperties = {
   borderBottom: "1px solid rgba(255,255,255,.08)",
   background: "#0f0f12",
   display: "grid",
-  gridTemplateColumns: "minmax(160px, 1fr) auto",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 560px)",
   gap: 10,
   alignItems: "center",
   overflow: "visible",
@@ -1285,8 +1285,10 @@ const topActions: React.CSSProperties = {
   display: "flex",
   gap: 6,
   alignItems: "center",
+  justifyContent: "flex-end",
+  minWidth: 0,
+  width: "100%",
   overflowX: "auto",
-  maxWidth: "62vw",
   paddingBottom: 2,
   scrollbarWidth: "none",
 };
@@ -1338,14 +1340,14 @@ const publishBtn: React.CSSProperties = {
 };
 
 const dots: React.CSSProperties = {
-  minWidth: 38,
-  width: 38,
-  height: 38,
+  minWidth: 34,
+  width: 34,
+  height: 34,
   borderRadius: 999,
   border: "1px solid rgba(255,255,255,.1)",
   background: "rgba(255,255,255,.04)",
   color: "#fff",
-  fontSize: 22,
+  fontSize: 20,
   cursor: "pointer",
   flexShrink: 0,
 };
