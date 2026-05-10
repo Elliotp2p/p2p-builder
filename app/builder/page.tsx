@@ -1378,7 +1378,7 @@ const stage: React.CSSProperties = {
   background: "#111114",
   border: "1px solid rgba(255,255,255,.08)",
   borderRadius: 24,
-  padding: 20,
+  padding: 10,
 };
 
 const canvas: React.CSSProperties = {
