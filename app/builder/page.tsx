@@ -29,6 +29,14 @@ const starters = [
   "Smart städplanerare för hem",
 ];
 
+const sectionTypes = [
+  "Testimonials",
+  "FAQ",
+  "Features",
+  "Stats",
+  "CTA",
+];
+
 type ChatMessage = {
   role: "user" | "ai";
   text: string;
@@ -580,6 +588,66 @@ export default function BuilderPage() {
     setLoading(false);
   };
 
+  const addSection = async (sectionType: string) => {
+    if (!html) {
+      setStatus("Generate first");
+      return;
+    }
+
+    const instruction = `
+Add a premium ${sectionType} section to the current active page.
+
+Rules:
+- Do not rewrite the whole website unnecessarily.
+- Insert the new section naturally before the final CTA or footer.
+- Match the current design, colors, typography, spacing and brand style.
+- Keep the section polished and startup-quality.
+- Return the complete updated HTML document for the active file.
+- Do not remove existing navigation, forms, pricing links, or contact form behavior.
+`;
+
+    setLoading(true);
+    setStatus(`Adding ${sectionType}...`);
+
+    setMessages((m) => [
+      ...m,
+      {
+        role: "user",
+        text: `Add ${sectionType} section`,
+      },
+    ]);
+
+    try {
+      const res = await authFetch("/api/coach", {
+        method: "POST",
+        body: JSON.stringify({
+          editWebsite: true,
+          currentHtml: html,
+          instruction,
+          problem,
+          activeFile,
+          allFiles: files,
+        }),
+      });
+
+      await readStream(res);
+      setStatus(`${sectionType} added`);
+    } catch (error: any) {
+      setStatus("Section error");
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text:
+            "Section error: " +
+            (error.message || "Could not add section."),
+        },
+      ]);
+    }
+
+    setLoading(false);
+  };
+
   const reviewSite = async () => {
     if (!html) {
       setStatus("Generate first");
@@ -956,6 +1024,26 @@ export default function BuilderPage() {
               style={field}
             />
 
+            <div style={sectionBox}>
+              <h3 style={{ marginTop: 0 }}>AI sections</h3>
+              <p style={mutedSmall}>
+                Add a new premium section to the active page.
+              </p>
+
+              <div style={sectionGrid}>
+                {sectionTypes.map((section) => (
+                  <button
+                    key={section}
+                    onClick={() => addSection(section)}
+                    disabled={loading || !html}
+                    style={sectionBtn}
+                  >
+                    Add {section}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {lastSaved && (
               <div style={linkBox}>
                 <p style={{ margin: 0 }}>Autosaved draft at {lastSaved}</p>
@@ -1243,8 +1331,8 @@ const topbar: React.CSSProperties = {
   borderBottom: "1px solid rgba(255,255,255,.08)",
   background: "#0f0f12",
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 500px)",
-  gap: 6,
+  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 560px)",
+  gap: 10,
   alignItems: "center",
   overflow: "visible",
 };
@@ -1365,6 +1453,31 @@ const menu: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,.1)",
   boxShadow: "0 30px 100px rgba(0,0,0,.55)",
   zIndex: 20,
+};
+
+const sectionBox: React.CSSProperties = {
+  marginTop: 22,
+  padding: 14,
+  borderRadius: 18,
+  background: "rgba(34,197,94,.08)",
+  border: "1px solid rgba(34,197,94,.18)",
+};
+
+const sectionGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 10,
+  marginTop: 14,
+};
+
+const sectionBtn: React.CSSProperties = {
+  padding: "10px 11px",
+  borderRadius: 999,
+  border: "1px solid rgba(134,239,172,.28)",
+  background: "rgba(34,197,94,.12)",
+  color: "#bbf7d0",
+  fontWeight: 900,
+  cursor: "pointer",
 };
 
 const stageWrap: React.CSSProperties = {
