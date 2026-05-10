@@ -1243,8 +1243,8 @@ const topbar: React.CSSProperties = {
   borderBottom: "1px solid rgba(255,255,255,.08)",
   background: "#0f0f12",
   display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 560px)",
-  gap: 10,
+  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 500px)",
+  gap: 6,
   alignItems: "center",
   overflow: "visible",
 };
