@@ -28,18 +28,21 @@ export default async function SitePage({
   params: Promise<{ id: string; page: string }>;
 }) {
   const { id, page } = await params;
+const safePage = ["pricing", "about", "contact"].includes(page)
+  ? page
+  : "index";
 
   const { data, error } = await supabase
     .from("sites")
     .select("html, html_files")
-    .eq("id", id)
+    .or(`id.eq.${id},slug.eq.${id}`)
     .single();
 
   if (error || !data) {
     notFound();
   }
 
-  const fileName = `${page}.html`;
+  const fileName = `${safePage}.html`;
 
   let html =
     data.html_files?.[fileName] ||
