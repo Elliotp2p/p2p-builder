@@ -1,52 +1,37 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const templates = [
-  "SaaS Landing Page",
-  "Mobile App",
-  "Agency Website",
-  "Marketplace",
-  "AI Tool",
-  "Local Business",
+const SECTION_TYPES = ["Testimonials", "FAQ", "Features", "Stats", "CTA"];
+
+const STARTER_IDEAS = [
+  "Luxury Nordic travel website for Gothenburg with cinematic harbor photography",
+  "Minimal Apple-style AI startup landing page",
+  "Premium Italian pizza restaurant with dark cinematic design",
+  "Luxury hotel website for Mallorca with editorial photography",
+  "Modern fintech startup inspired by Stripe",
+  "Scandinavian architecture studio portfolio",
+  "Luxury skincare ecommerce brand",
+  "Modern gym website with booking and membership plans",
+  "AI CRM platform for real estate agencies",
+  "High-end coffee brand with calm beige aesthetic",
 ];
 
-const styles = [
-  "premium modern",
-  "luxury dark",
-  "minimal Apple style",
-  "Stripe/Linear SaaS",
-  "futuristic neon",
-  "playful friendly",
-];
+const FILE_TABS = [
+  { label: "Home", file: "index.html" },
+  { label: "Pricing", file: "pricing.html" },
+  { label: "About", file: "about.html" },
+  { label: "Contact", file: "contact.html" },
+] as const;
 
-const starters = [
-  "AI receptionist för tandläkare",
-  "App som planerar veckans mat",
-  "Marketplace för lokala tränare",
-  "AI lead finder för småföretag",
-  "Smart städplanerare för hem",
-];
-
-const sectionTypes = [
-  "Testimonials",
-  "FAQ",
-  "Features",
-  "Stats",
-  "CTA",
-];
-
-type ChatMessage = {
-  role: "user" | "ai";
-  text: string;
-};
+type ChatMessage = { role: "user" | "ai"; text: string };
 
 type Project = {
   id: string;
   name: string;
   problem: string;
-  template: string;
+  template?: string;
   created_at: string;
 };
 
@@ -59,6 +44,30 @@ type Lead = {
   message?: string;
   created_at?: string;
 };
+
+type ActivePanel = "sections" | "projects" | null;
+
+function buildPreviewHtml(html: string): string {
+  return html
+    .replace(
+      /<a\b([^>]*?)href=(["'])(.*?)\2([^>]*)>/gi,
+      (_m, before, _quote, href, after) => {
+        const safe = String(href || "").replaceAll('"', "&quot;");
+        return `<a ${before} href="javascript:void(0)" data-builder-href="${safe}" ${after}>`;
+      }
+    )
+    .replace(/<button\b([^>]*)>/gi, '<button type="button" $1>')
+    .replace(
+      "</head>",
+      `<style>
+        html,body{width:1440px!important;min-height:100vh!important;margin:0!important;padding:0!important;transform:none!important;zoom:1!important}
+        body{display:block!important;overflow-x:hidden!important}
+        main,section,header,footer,nav{width:100%!important}
+        a,button{pointer-events:auto!important;cursor:pointer!important}
+        h1:hover,h2:hover,h3:hover,h4:hover,h5:hover,h6:hover,p:hover,span:hover{outline:2px solid #ec4899!important;outline-offset:4px!important;cursor:pointer!important}
+      </style></head>`
+    );
+}
 
 export default function BuilderPage() {
   const supabase = useMemo(
@@ -75,18 +84,17 @@ export default function BuilderPage() {
   const [loginStatus, setLoginStatus] = useState("");
 
   const [problem, setProblem] = useState("");
-  const [template, setTemplate] = useState(templates[0]);
-  const [style, setStyle] = useState(styles[0]);
-  const [audience, setAudience] = useState("kunder som vill spara tid");
-
   const [started, setStarted] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
 
   const [files, setFiles] = useState<Record<string, string>>({});
   const [activeFile, setActiveFile] = useState("index.html");
+
   const html = files[activeFile] || files["index.html"] || "";
+  const previewHtml = html ? buildPreviewHtml(html) : "";
 
   const [link, setLink] = useState("");
+  const [publishToast, setPublishToast] = useState("");
   const [status, setStatus] = useState("Ready");
   const [lastSaved, setLastSaved] = useState("");
   const [loading, setLoading] = useState(false);
@@ -95,6 +103,8 @@ export default function BuilderPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
 
   const [chatInput, setChatInput] = useState("");
+  const [imagePrompt, setImagePrompt] = useState("");
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "ai",
@@ -107,94 +117,455 @@ export default function BuilderPage() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const [scale, setScale] = useState(0.6);
-  const [selectedText, setSelectedText] = useState("");
 
-  const getAccessToken = async () => {
+  const getAccessToken = useCallback(async () => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
 
     return session?.access_token || "";
-  };
+  }, [supabase]);
 
-  const authFetch = async (url: string, options: RequestInit = {}) => {
-    const token = await getAccessToken();
-    const headers = new Headers(options.headers || {});
+  const authFetch = useCallback(
+    async (url: string, options: RequestInit = {}) => {
+      const token = await getAccessToken();
+      const headers = new Headers(options.headers || {});
 
-    if (options.body && !headers.has("Content-Type")) {
-      headers.set("Content-Type", "application/json");
-    }
+      if (options.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
 
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
 
-    return fetch(url, {
-      ...options,
-      headers,
-    });
-  };
+      return fetch(url, { ...options, headers });
+    },
+    [getAccessToken]
+  );
 
-  const saveDraftLocal = () => {
+  const addMessage = useCallback((role: "user" | "ai", text: string) => {
+    setMessages((prev) => [...prev, { role, text }]);
+  }, []);
+
+  const saveDraftLocal = useCallback(() => {
     if (!files["index.html"]) return;
 
-    const draft = {
-      files,
-      activeFile,
-      problem,
-      template,
-      style,
-      audience,
-      savedAt: new Date().toISOString(),
-    };
+    localStorage.setItem(
+      "p2p-builder-autosave",
+      JSON.stringify({
+        files,
+        activeFile,
+        problem,
+        savedAt: new Date().toISOString(),
+      })
+    );
 
-    localStorage.setItem("p2p-builder-autosave", JSON.stringify(draft));
     setLastSaved(new Date().toLocaleTimeString());
-  };
+  }, [files, activeFile, problem]);
 
-  const previewHtml = html
-    ? html
-        .replaceAll("/site/REPLACE_ID/pricing", "#")
-        .replaceAll("/site/REPLACE_ID/about", "#")
-        .replaceAll("/site/REPLACE_ID/contact", "#")
-        .replaceAll("/site/REPLACE_ID", "#")
-        .replace(
-          "</head>",
-          `<style>
-            html, body {
-              width: 1440px !important;
-              min-height: 100vh !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              transform: none !important;
-              zoom: 1 !important;
-            }
-            body {
-              display: block !important;
-              overflow-x: hidden !important;
-            }
-            main, section, header, footer, nav {
-              width: 100% !important;
-            }
-            a {
-              pointer-events: auto !important;
-            }
-            h1:hover, h2:hover, h3:hover, h4:hover, h5:hover, h6:hover,
-            p:hover, a:hover, button:hover, span:hover {
-              outline: 2px solid #22c55e !important;
-              outline-offset: 4px !important;
-              cursor: pointer !important;
-            }
-          </style></head>`
-        )
-    : "";
+  const readStream = useCallback(
+    async (res: Response) => {
+      if (!res.ok) {
+        let errorMessage = "Request failed";
 
-  const fileTabs = [
-    { label: "Home", file: "index.html" },
-    { label: "Pricing", file: "pricing.html" },
-    { label: "About", file: "about.html" },
-    { label: "Contact", file: "contact.html" },
-  ];
+        try {
+          const data = await res.json();
+          errorMessage = data.error || errorMessage;
+        } catch {
+          errorMessage = await res.text();
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream reader");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        for (const event of events) {
+          const line = event.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+
+          const payload = JSON.parse(line.replace("data: ", ""));
+
+          if (payload.type === "status") {
+            setStatus(payload.text);
+            addMessage("ai", payload.text);
+          }
+
+          if (payload.type === "review") {
+            addMessage("ai", payload.text || "No review returned.");
+          }
+
+          if (payload.type === "files") {
+            const incoming = payload.files || {};
+
+            setFiles((prev) => ({
+              ...prev,
+              ...incoming,
+            }));
+
+            if (incoming["index.html"]) {
+              setActiveFile("index.html");
+            }
+          }
+
+          if (payload.type === "error") {
+            setStatus("Error");
+            addMessage("ai", payload.text || "Something went wrong.");
+          }
+
+          if (payload.type === "done") {
+            setStatus("Done");
+          }
+        }
+      }
+    },
+    [addMessage]
+  );
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await authFetch("/api/sites");
+      if (!res.ok) return;
+
+      const data = await res.json();
+      setProjects(data.sites || []);
+    } catch {
+      // ignore
+    }
+  }, [authFetch]);
+
+  const loadLeads = useCallback(async () => {
+    try {
+      const res = await authFetch("/api/leads");
+      if (!res.ok) return;
+
+      const data = await res.json();
+      setLeads(data.leads || []);
+    } catch {
+      // ignore
+    }
+  }, [authFetch]);
+
+  const runBuild = useCallback(
+    async (customProblem?: string) => {
+      const finalProblem = customProblem || problem || chatInput;
+      if (!finalProblem.trim()) return;
+
+      setStarted(true);
+      setLoading(true);
+      setLink("");
+      setStatus("Starting...");
+      addMessage("user", finalProblem);
+
+      try {
+        const res = await authFetch("/api/coach", {
+          method: "POST",
+          body: JSON.stringify({
+            problem: finalProblem,
+          }),
+        });
+
+        setProblem(finalProblem);
+        setChatInput("");
+
+        await readStream(res);
+        setStatus("Preview updated");
+      } catch (error: any) {
+        setStatus("Error");
+        addMessage("ai", "Build error: " + (error.message || "Try again."));
+      }
+
+      setLoading(false);
+    },
+    [problem, chatInput, authFetch, readStream, addMessage]
+  );
+
+  const edit = useCallback(async () => {
+    if (!chatInput.trim()) return;
+
+    const instruction = chatInput;
+    setChatInput("");
+
+    if (!html) {
+      await runBuild(instruction);
+      return;
+    }
+
+    setLoading(true);
+    setStatus("Editing...");
+    addMessage("user", instruction);
+
+    try {
+      const res = await authFetch("/api/coach", {
+        method: "POST",
+        body: JSON.stringify({
+          editWebsite: true,
+          currentHtml: html,
+          instruction,
+          problem,
+          activeFile,
+          allFiles: files,
+        }),
+      });
+
+      await readStream(res);
+      setStatus("Edited");
+    } catch (error: any) {
+      setStatus("Error");
+      addMessage("ai", "Edit error: " + (error.message || "Network error."));
+    }
+
+    setLoading(false);
+  }, [
+    chatInput,
+    html,
+    runBuild,
+    authFetch,
+    readStream,
+    addMessage,
+    problem,
+    activeFile,
+    files,
+  ]);
+
+  const addSection = useCallback(
+    async (sectionType: string) => {
+      if (!html) {
+        setStatus("Generate first");
+        return;
+      }
+
+      const instruction = `Add a premium ${sectionType} section to the active page. Match current design. Insert before final CTA or footer. Return complete updated HTML.`;
+
+      setLoading(true);
+      setStatus(`Adding ${sectionType}...`);
+      addMessage("user", `Add ${sectionType} section`);
+
+      try {
+        const res = await authFetch("/api/coach", {
+          method: "POST",
+          body: JSON.stringify({
+            editWebsite: true,
+            currentHtml: html,
+            instruction,
+            problem,
+            activeFile,
+            allFiles: files,
+          }),
+        });
+
+        await readStream(res);
+        setStatus(`${sectionType} added`);
+      } catch (error: any) {
+        setStatus("Error");
+        addMessage("ai", "Section error: " + (error.message || "Unknown error"));
+      }
+
+      setLoading(false);
+    },
+    [html, authFetch, readStream, addMessage, problem, activeFile, files]
+  );
+
+  const generateHeroImage = useCallback(async () => {
+    if (!html) {
+      setStatus("Generate first");
+      return;
+    }
+
+    const prompt =
+      imagePrompt ||
+      problem ||
+      "premium startup hero image, cinematic modern website visual";
+
+    setLoading(true);
+    setStatus("Generating image...");
+    addMessage("user", "Generate hero image: " + prompt);
+
+    try {
+      const res = await authFetch("/api/image", {
+        method: "POST",
+        body: JSON.stringify({ prompt }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Image generation failed");
+      }
+
+      const img = `<img src="${data.image}" alt="AI hero" style="width:100%;max-width:560px;border-radius:28px;box-shadow:0 30px 100px rgba(0,0,0,.35);object-fit:cover;" />`;
+
+      let updated = html;
+
+      if (/<img[^>]*>/i.test(updated)) {
+        updated = updated.replace(/<img[^>]*>/i, img);
+      } else if (/<\/section>/i.test(updated)) {
+        updated = updated.replace(/<\/section>/i, `${img}</section>`);
+      } else {
+        updated = updated.replace(/<body[^>]*>/i, (match) => `${match}${img}`);
+      }
+
+      setFiles((prev) => ({
+        ...prev,
+        [activeFile]: updated,
+      }));
+
+      setImagePrompt("");
+      setStatus("Image added");
+      addMessage("ai", "Hero image generated and added.");
+    } catch (error: any) {
+      setStatus("Error");
+      addMessage("ai", "Image error: " + (error.message || "Unknown error"));
+    }
+
+    setLoading(false);
+  }, [html, imagePrompt, problem, authFetch, addMessage, activeFile]);
+
+  const reviewSite = useCallback(async () => {
+    if (!html) {
+      setStatus("Generate first");
+      return;
+    }
+
+    setLoading(true);
+    setStatus("Reviewing...");
+    addMessage("user", "Review this website");
+
+    try {
+      const res = await authFetch("/api/coach", {
+        method: "POST",
+        body: JSON.stringify({
+          reviewWebsite: true,
+          currentHtml: html,
+          problem,
+          activeFile,
+          allFiles: files,
+        }),
+      });
+
+      await readStream(res);
+      setStatus("Review done");
+    } catch (error: any) {
+      setStatus("Error");
+      addMessage("ai", "Review error: " + (error.message || "Unknown error"));
+    }
+
+    setLoading(false);
+  }, [html, authFetch, readStream, addMessage, problem, activeFile, files]);
+
+  const publish = useCallback(async () => {
+    if (!files["index.html"]) {
+      setStatus("Generate first");
+      return;
+    }
+
+    setStatus("Publishing...");
+    addMessage("ai", "Publishing and creating live link...");
+
+    try {
+      const res = await authFetch("/api/save", {
+        method: "POST",
+        body: JSON.stringify({
+          html: files["index.html"],
+          files,
+          name: problem,
+          problem,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        addMessage("ai", "Publish error: " + (data.error || "Unknown"));
+        setStatus("Publish error");
+        return;
+      }
+
+      const fullUrl = window.location.origin + data.url;
+
+      setLink(fullUrl);
+      setPublishToast(fullUrl);
+      setStatus("Published");
+      addMessage("ai", "Published. Your live link is ready.");
+
+      setTimeout(() => {
+        setPublishToast("");
+      }, 8000);
+
+      localStorage.removeItem("p2p-builder-autosave");
+      setLastSaved("");
+
+      loadProjects();
+      loadLeads();
+    } catch (error: any) {
+      setStatus("Error");
+      addMessage("ai", "Publish error: " + (error.message || "Unknown error"));
+    }
+  }, [files, problem, authFetch, addMessage, loadProjects, loadLeads]);
+
+  const deleteProject = useCallback(
+    async (id: string, name?: string) => {
+      const sure = window.confirm(
+        `Delete "${name || "this project"}"? This cannot be undone.`
+      );
+
+      if (!sure) return;
+
+      try {
+        const res = await authFetch(`/api/sites?id=${id}`, {
+          method: "DELETE",
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          addMessage("ai", "Delete error: " + (data.error || "Unknown error"));
+          return;
+        }
+
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+        setLeads((prev) => prev.filter((lead) => lead.site_id !== id));
+        addMessage("ai", "Project deleted.");
+      } catch (error: any) {
+        addMessage("ai", "Delete error: " + (error.message || "Unknown error"));
+      }
+    },
+    [authFetch, addMessage]
+  );
+
+  const login = useCallback(async () => {
+    setLoginStatus("Opening Google...");
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/builder`,
+      },
+    });
+
+    if (error) {
+      setLoginStatus(error.message);
+    }
+  }, [supabase]);
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    window.location.reload();
+  }, [supabase]);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -230,9 +601,6 @@ export default function BuilderPage() {
         setFiles(draft.files);
         setActiveFile(draft.activeFile || "index.html");
         setProblem(draft.problem || "");
-        setTemplate(draft.template || templates[0]);
-        setStyle(draft.style || styles[0]);
-        setAudience(draft.audience || "kunder som vill spara tid");
         setStarted(true);
         setStatus("Autosave restored");
 
@@ -243,7 +611,7 @@ export default function BuilderPage() {
         setMessages([
           {
             role: "ai",
-            text: "Autosaved draft restored. You can continue editing or publish it.",
+            text: "Autosaved draft restored. Continue editing or publish.",
           },
         ]);
       }
@@ -253,33 +621,92 @@ export default function BuilderPage() {
   }, []);
 
   useEffect(() => {
-    if (!started) return;
-    if (!files["index.html"]) return;
+    if (!started || !files["index.html"]) return;
 
-    const timeout = setTimeout(() => {
-      saveDraftLocal();
-    }, 2000);
-
+    const timeout = setTimeout(saveDraftLocal, 2000);
     return () => clearTimeout(timeout);
-  }, [files, problem, template, style, audience, activeFile, started]);
+  }, [files, problem, activeFile, started, saveDraftLocal]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
+    const updateScale = () => {
+      if (!previewOuterRef.current) return;
+
+      setScale(Math.min((previewOuterRef.current.clientWidth - 48) / 1440, 1));
+    };
+
+    updateScale();
+    window.addEventListener("resize", updateScale);
+
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
+
+  useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe || !previewHtml) return;
 
-    const injectEditor = () => {
+    const inject = () => {
       const doc = iframe.contentDocument || iframe.contentWindow?.document;
       if (!doc) return;
 
-      const elements = doc.querySelectorAll(
-        "h1,h2,h3,h4,h5,h6,p,a,button,span"
+      const goToPage = (value: string) => {
+        const lower = value.toLowerCase();
+
+        if (
+          lower.includes("pricing") ||
+          lower.includes("pris") ||
+          lower.includes("plan")
+        ) {
+          setActiveFile("pricing.html");
+          return;
+        }
+
+        if (lower.includes("about") || lower.includes("om oss")) {
+          setActiveFile("about.html");
+          return;
+        }
+
+        if (
+          lower.includes("contact") ||
+          lower.includes("kontakt") ||
+          lower.includes("demo")
+        ) {
+          setActiveFile("contact.html");
+          return;
+        }
+
+        if (lower.includes("home") || lower.includes("start")) {
+          setActiveFile("index.html");
+        }
+      };
+
+      doc.addEventListener(
+        "click",
+        (e: any) => {
+          const target = e.target as HTMLElement;
+          const clickable = target.closest("a,button") as HTMLElement | null;
+
+          if (clickable) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const href =
+              clickable.getAttribute("data-builder-href") ||
+              clickable.getAttribute("href") ||
+              "";
+
+            goToPage(href + " " + (clickable.innerText || ""));
+          }
+        },
+        true
       );
 
-      elements.forEach((el: any) => {
+      doc.querySelectorAll("h1,h2,h3,h4,h5,h6,p,span").forEach((el: any) => {
+        if (el.closest("a,button")) return;
+
         el.style.cursor = "pointer";
 
         el.onclick = (e: any) => {
@@ -289,542 +716,113 @@ export default function BuilderPage() {
           const text = el.innerText || "";
           if (!text.trim()) return;
 
-          setSelectedText(text);
-
           const replacement = prompt("Edit text:", text);
 
           if (replacement && replacement !== text) {
-            const updated = html.replace(text, replacement);
-
             setFiles((prev) => ({
               ...prev,
-              [activeFile]: updated,
+              [activeFile]: html.replace(text, replacement),
             }));
 
-            setStatus("Text edited visually");
+            setStatus("Text edited");
           }
         };
       });
     };
 
-    const timeout = setTimeout(injectEditor, 600);
+    const timeout = setTimeout(inject, 600);
     return () => clearTimeout(timeout);
   }, [previewHtml, activeFile, html]);
-
-  useEffect(() => {
-    const updateScale = () => {
-      if (!previewOuterRef.current) return;
-      const width = previewOuterRef.current.clientWidth - 40;
-      setScale(Math.min(width / 1440, 1));
-    };
-
-    updateScale();
-    window.addEventListener("resize", updateScale);
-
-    return () => window.removeEventListener("resize", updateScale);
-  }, []);
-
-  const readStream = async (res: Response) => {
-    if (!res.ok) {
-      let errorMessage = "Request failed";
-
-      try {
-        const data = await res.json();
-        errorMessage = data.error || errorMessage;
-      } catch {
-        errorMessage = await res.text();
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("No stream reader");
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
-
-      for (const event of events) {
-        const line = event.split("\n").find((l) => l.startsWith("data: "));
-        if (!line) continue;
-
-        const payload = JSON.parse(line.replace("data: ", ""));
-
-        if (payload.type === "status") {
-          setStatus(payload.text);
-          setMessages((m) => [...m, { role: "ai", text: payload.text }]);
-        }
-
-        if (payload.type === "review") {
-          setMessages((m) => [
-            ...m,
-            {
-              role: "ai",
-              text: payload.text || "No review returned.",
-            },
-          ]);
-        }
-
-        if (payload.type === "files") {
-          const incomingFiles = payload.files || {};
-
-          setFiles((prev) => ({
-            ...prev,
-            ...incomingFiles,
-          }));
-
-          if (incomingFiles["index.html"]) {
-            setActiveFile("index.html");
-          }
-        }
-
-        if (payload.type === "error") {
-          setStatus("Error");
-          setMessages((m) => [
-            ...m,
-            {
-              role: "ai",
-              text: payload.text || "Something went wrong.",
-            },
-          ]);
-        }
-
-        if (payload.type === "done") {
-          setStatus("Done");
-        }
-      }
-    }
-  };
-
-  const login = async () => {
-    setLoginStatus("Opening Google...");
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/builder`,
-      },
-    });
-
-    if (error) {
-      setLoginStatus(error.message);
-    }
-  };
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-    window.location.reload();
-  };
-
-  const loadProjects = async () => {
-    try {
-      const res = await authFetch("/api/sites");
-      const data = await res.json();
-
-      if (!res.ok) {
-        console.error(data.error || "Failed loading projects");
-        return;
-      }
-
-      setProjects(data.sites || []);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const loadLeads = async () => {
-    try {
-      const res = await authFetch("/api/leads");
-      const data = await res.json();
-
-      if (!res.ok) {
-        console.error(data.error || "Failed loading leads");
-        return;
-      }
-
-      setLeads(data.leads || []);
-    } catch (error) {
-      console.error(error);
-    }
-  };
 
   useEffect(() => {
     if (userEmail) {
       loadProjects();
       loadLeads();
     }
-  }, [userEmail]);
+  }, [userEmail, loadProjects, loadLeads]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("id");
+    const idea = params.get("idea");
 
-    if (!id) return;
+    if (idea || !id) return;
 
     setStarted(true);
 
     fetch(`/api/site?id=${id}`)
       .then((res) => res.json())
       .then((data) => {
-        if (data.site) {
-          const loadedFiles = data.site.html_files || {
-            "index.html": data.site.html,
-          };
+        if (!data.site) return;
 
-          setFiles(loadedFiles);
-          setActiveFile("index.html");
-          setProblem(data.site.problem || "");
-          setTemplate(data.site.template || templates[0]);
-          setStatus("Project loaded");
-          setMessages([
-            {
-              role: "ai",
-              text: "Project loaded. I can edit the full multi-page site with context.",
-            },
-          ]);
-        }
+        setFiles(data.site.html_files || { "index.html": data.site.html });
+        setActiveFile("index.html");
+        setProblem(data.site.problem || "");
+        setStatus("Project loaded");
+        setMessages([
+          {
+            role: "ai",
+            text: "Project loaded. I can edit the full multi-page site.",
+          },
+        ]);
       });
   }, []);
 
-  const addUser = (text: string) => {
-    setMessages((m) => [...m, { role: "user", text }]);
-  };
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const idea = params.get("idea");
 
-  const runBuild = async (customProblem?: string) => {
-    const finalProblem = customProblem || problem || chatInput;
+    if (!idea) return;
 
-    if (!finalProblem.trim()) return;
+    localStorage.removeItem("p2p-builder-autosave");
 
-    setStarted(true);
-    setLoading(true);
+    setFiles({});
+    setActiveFile("index.html");
     setLink("");
-    setStatus("Starting...");
-    addUser(finalProblem);
-
-    try {
-      const res = await authFetch("/api/coach", {
-        method: "POST",
-        body: JSON.stringify({
-          problem: finalProblem,
-          template,
-          style,
-          audience,
-        }),
-      });
-
-      setProblem(finalProblem);
-      setChatInput("");
-
-      await readStream(res);
-      setStatus("Preview updated");
-    } catch (error: any) {
-      setStatus("Error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text:
-            "Build error: " +
-            (error.message || "Try again with a shorter prompt."),
-        },
-      ]);
-    }
-
-    setLoading(false);
-  };
-
-  const edit = async () => {
-    if (!chatInput.trim()) return;
-
-    const instruction = chatInput;
-    setChatInput("");
-
-    if (!html) {
-      await runBuild(instruction);
-      return;
-    }
-
-    setLoading(true);
-    setStatus("Editing...");
-    addUser(instruction);
-
-    try {
-      const res = await authFetch("/api/coach", {
-        method: "POST",
-        body: JSON.stringify({
-          editWebsite: true,
-          currentHtml: html,
-          instruction,
-          problem,
-          activeFile,
-          allFiles: files,
-        }),
-      });
-
-      await readStream(res);
-      setStatus("Edited");
-    } catch (error: any) {
-      setStatus("Error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text:
-            "Edit error: " +
-            (error.message || "Network error while editing."),
-        },
-      ]);
-    }
-
-    setLoading(false);
-  };
-
-  const addSection = async (sectionType: string) => {
-    if (!html) {
-      setStatus("Generate first");
-      return;
-    }
-
-    const instruction = `
-Add a premium ${sectionType} section to the current active page.
-
-Rules:
-- Do not rewrite the whole website unnecessarily.
-- Insert the new section naturally before the final CTA or footer.
-- Match the current design, colors, typography, spacing and brand style.
-- Keep the section polished and startup-quality.
-- Return the complete updated HTML document for the active file.
-- Do not remove existing navigation, forms, pricing links, or contact form behavior.
-`;
-
-    setLoading(true);
-    setStatus(`Adding ${sectionType}...`);
-
-    setMessages((m) => [
-      ...m,
-      {
-        role: "user",
-        text: `Add ${sectionType} section`,
-      },
-    ]);
-
-    try {
-      const res = await authFetch("/api/coach", {
-        method: "POST",
-        body: JSON.stringify({
-          editWebsite: true,
-          currentHtml: html,
-          instruction,
-          problem,
-          activeFile,
-          allFiles: files,
-        }),
-      });
-
-      await readStream(res);
-      setStatus(`${sectionType} added`);
-    } catch (error: any) {
-      setStatus("Section error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text:
-            "Section error: " +
-            (error.message || "Could not add section."),
-        },
-      ]);
-    }
-
-    setLoading(false);
-  };
-
-  const reviewSite = async () => {
-    if (!html) {
-      setStatus("Generate first");
-      return;
-    }
-
-    setLoading(true);
-    setStatus("Reviewing site...");
-
-    setMessages((m) => [
-      ...m,
-      {
-        role: "user",
-        text: "Review this website",
-      },
-    ]);
-
-    try {
-      const res = await authFetch("/api/coach", {
-        method: "POST",
-        body: JSON.stringify({
-          reviewWebsite: true,
-          currentHtml: html,
-          problem,
-          template,
-          activeFile,
-          allFiles: files,
-        }),
-      });
-
-      await readStream(res);
-      setStatus("Review done");
-    } catch (error: any) {
-      setStatus("Review error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: "Review error: " + (error.message || "Unknown error"),
-        },
-      ]);
-    }
-
-    setLoading(false);
-  };
-
-  const publish = async () => {
-    if (!files["index.html"]) {
-      setStatus("Generate first");
-      return;
-    }
-
-    setStatus("Publishing");
-    setMessages((m) => [
-      ...m,
+    setLastSaved("");
+    setProblem(idea);
+    setStarted(true);
+    setMessages([
       {
         role: "ai",
-        text: "Publishing the multi-page site and creating a live link...",
+        text: "Starting a new website from this idea.",
       },
     ]);
 
-    try {
-      const res = await authFetch("/api/save", {
-        method: "POST",
-        body: JSON.stringify({
-          html: files["index.html"],
-          files,
-          name: problem,
-          problem,
-          template,
-        }),
-      });
+    window.history.replaceState({}, "", "/builder");
 
-      const data = await res.json();
+    setTimeout(() => {
+      runBuild(idea);
+    }, 300);
+  }, [runBuild]);
 
-      if (!res.ok) {
-        setStatus("Publish error");
-        setMessages((m) => [
-          ...m,
-          {
-            role: "ai",
-            text: "Publish error: " + (data.error || "Unknown error"),
-          },
-        ]);
-        return;
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && chatInput.trim()) {
+        e.preventDefault();
+        edit();
       }
 
-      const fullUrl = window.location.origin + data.url;
-
-      setLink(fullUrl);
-      setStatus("Published");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: "Published. Your multi-page live link is ready.",
-        },
-      ]);
-
-      localStorage.removeItem("p2p-builder-autosave");
-      setLastSaved("");
-
-      loadProjects();
-      loadLeads();
-    } catch (error: any) {
-      setStatus("Publish error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: "Publish error: " + (error.message || "Unknown publish error"),
-        },
-      ]);
-    }
-  };
-
-  const deleteProject = async (id: string, name?: string) => {
-    const sure = window.confirm(
-      `Delete "${name || "this project"}"? This cannot be undone.`
-    );
-
-    if (!sure) return;
-
-    try {
-      setStatus("Deleting project...");
-
-      const res = await authFetch(`/api/sites?id=${id}`, {
-        method: "DELETE",
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setStatus("Delete error");
-        setMessages((m) => [
-          ...m,
-          {
-            role: "ai",
-            text: "Delete error: " + (data.error || "Unknown error"),
-          },
-        ]);
-        return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        publish();
       }
 
-      setProjects((prev) => prev.filter((p) => p.id !== id));
-      setLeads((prev) => prev.filter((lead) => lead.site_id !== id));
-      setStatus("Project deleted");
+      if (e.key === "Escape") {
+        setActivePanel(null);
+      }
+    };
 
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: "Project deleted.",
-        },
-      ]);
-    } catch (error: any) {
-      setStatus("Delete error");
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: "Delete error: " + (error.message || "Unknown error"),
-        },
-      ]);
-    }
-  };
-
-  const openProject = (id: string) => {
-    window.location.href = `/builder?id=${id}`;
-  };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [chatInput, edit, publish]);
 
   if (checkingAuth) {
     return (
-      <main style={startPage}>
-        <div style={startCard}>
-          <div style={mark}>P</div>
-          <h1 style={startTitle}>Loading...</h1>
+      <main style={s.splash}>
+        <div style={s.splashInner}>
+          <div style={s.logo}>P</div>
+          <p style={s.splashMuted}>Loading workspace...</p>
         </div>
       </main>
     );
@@ -832,20 +830,18 @@ Rules:
 
   if (!userEmail) {
     return (
-      <main style={startPage}>
-        <div style={startCard}>
-          <div style={mark}>P</div>
-          <p style={eyebrow}>Problem to Profit AI</p>
-          <h1 style={startTitle}>Log in to build</h1>
-          <p style={startText}>
-            Continue with Google to access your AI builder workspace.
+      <main style={s.splash}>
+        <div style={s.card}>
+          <div style={s.logo}>P</div>
+          <p style={s.eyebrow}>Problem to Profit</p>
+          <h1 style={s.cardTitle}>Log in to build</h1>
+          <p style={s.cardText}>
+            Continue with Google to access your AI website builder.
           </p>
-
-          <button onClick={login} style={startButton}>
+          <button onClick={login} style={s.primaryBtn}>
             Continue with Google
           </button>
-
-          <p style={mutedSmall}>{loginStatus}</p>
+          {loginStatus && <p style={s.muted}>{loginStatus}</p>}
         </div>
       </main>
     );
@@ -853,82 +849,50 @@ Rules:
 
   if (!started) {
     return (
-      <main style={startPage}>
-        <div style={startCard}>
-          <div style={mark}>P</div>
-          <p style={eyebrow}>Problem to Profit AI</p>
-          <h1 style={startTitle}>What should we build?</h1>
-          <p style={startText}>
-            Choose the setup first. Then enter the builder with a clean
-            workspace.
+      <main style={s.splash}>
+        <div style={s.card}>
+          <div style={s.logo}>P</div>
+          <p style={s.eyebrow}>Problem to Profit AI</p>
+          <h1 style={s.cardTitle}>Describe your website</h1>
+          <p style={s.cardText}>
+            Write what you want to build. AI will automatically choose the best
+            design, layout, colors, and sections.
           </p>
 
-          <label style={label}>Problem / product idea</label>
           <textarea
             value={problem}
             onChange={(e) => setProblem(e.target.value)}
-            placeholder="Ex: AI receptionist för tandläkare"
-            style={bigTextArea}
-          />
-
-          <div style={startGrid}>
-            <div>
-              <label style={label}>Template</label>
-              <select
-                value={template}
-                onChange={(e) => setTemplate(e.target.value)}
-                style={field}
-              >
-                {templates.map((t) => (
-                  <option key={t} value={t} style={{ color: "#000" }}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={label}>Style</label>
-              <select
-                value={style}
-                onChange={(e) => setStyle(e.target.value)}
-                style={field}
-              >
-                {styles.map((s) => (
-                  <option key={s} value={s} style={{ color: "#000" }}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <label style={label}>Audience</label>
-          <input
-            value={audience}
-            onChange={(e) => setAudience(e.target.value)}
-            style={field}
+            placeholder="Ex: Luxury Nordic travel website for Gothenburg with cinematic harbor photography"
+            style={s.bigTextarea}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                runBuild();
+              }
+            }}
           />
 
           <button
             onClick={() => runBuild()}
-            disabled={loading}
-            style={startButton}
+            disabled={loading || !problem.trim()}
+            style={{
+              ...s.primaryBtn,
+              opacity: problem.trim() ? 1 : 0.45,
+            }}
           >
-            {loading ? "Building..." : "Start building"}
+            {loading ? "Building..." : "Generate website"}
           </button>
 
-          <div style={starterGrid}>
-            {starters.map((s) => (
+          <div style={s.starterGrid}>
+            {STARTER_IDEAS.map((idea) => (
               <button
-                key={s}
+                key={idea}
                 onClick={() => {
-                  setProblem(s);
-                  runBuild(s);
+                  setProblem(idea);
+                  runBuild(idea);
                 }}
-                style={starterPill}
+                style={s.starterPill}
               >
-                {s}
+                {idea}
               </button>
             ))}
           </div>
@@ -937,271 +901,372 @@ Rules:
     );
   }
 
+  const statusColor =
+    status === "Error"
+      ? "#f87171"
+      : status === "Done" ||
+        status === "Published" ||
+        status === "Edited" ||
+        status === "Preview updated"
+      ? "#4ade80"
+      : "#a1a1aa";
+
   return (
-    <main style={app}>
-      <header style={topbar}>
-        <div style={brand}>
-          <div style={markSmall}>P</div>
+    <main style={s.app}>
+      {publishToast && (
+        <div style={s.toast}>
+          <span style={{ color: "#4ade80", fontWeight: 700 }}>Published</span>
+          <a href={publishToast} target="_blank" style={s.toastLink}>
+            {publishToast}
+          </a>
+          <button onClick={() => setPublishToast("")} style={s.toastClose}>
+            ×
+          </button>
+        </div>
+      )}
+
+      <header style={s.topbar}>
+        <div style={s.brand}>
+          <div style={s.logoSmall}>P</div>
           <div style={{ minWidth: 0 }}>
-            <strong>Problem to Profit</strong>
-            <p style={mutedSmall}>
-              {status} · {activeFile} · {Math.round(scale * 100)}% · Saved:{" "}
-              {lastSaved || "Not yet"} · {userEmail}
-            </p>
+            <strong style={{ fontSize: 13 }}>Problem to Profit</strong>
+            <div
+              style={{
+                ...s.muted,
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: statusColor,
+                  display: "inline-block",
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ color: statusColor, fontWeight: 600 }}>
+                {status}
+              </span>
+              <span style={s.dot}>·</span>
+              <span>{activeFile}</span>
+              {lastSaved && (
+                <>
+                  <span style={s.dot}>·</span>
+                  <span>Saved {lastSaved}</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
-        <div style={topActions}>
-          {fileTabs.map((tab) => (
+        <div style={s.topActions}>
+          {FILE_TABS.map((tab) => (
             <button
               key={tab.file}
               onClick={() => files[tab.file] && setActiveFile(tab.file)}
               disabled={!files[tab.file]}
               style={{
-                ...tabBtn,
+                ...s.tabBtn,
                 background:
-                  activeFile === tab.file ? "#fff" : "rgba(255,255,255,.05)",
-                color: activeFile === tab.file ? "#09090b" : "#fff",
-                opacity: files[tab.file] ? 1 : 0.35,
+                  activeFile === tab.file ? "rgba(255,255,255,.12)" : "transparent",
+                borderColor:
+                  activeFile === tab.file
+                    ? "rgba(255,255,255,.2)"
+                    : "transparent",
+                opacity: files[tab.file] ? 1 : 0.3,
               }}
             >
               {tab.label}
             </button>
           ))}
 
-          <button onClick={reviewSite} disabled={loading} style={reviewBtn}>
+          <div style={s.divider} />
+
+          <button onClick={reviewSite} disabled={loading} style={s.ghostBtn}>
             Review
           </button>
 
-          <button onClick={() => runBuild()} disabled={loading} style={ghost}>
+          <button onClick={() => runBuild()} disabled={loading} style={s.ghostBtn}>
             Regen
           </button>
 
-          <button onClick={publish} disabled={loading} style={publishBtn}>
-            Publish
+          <button
+            onClick={() =>
+              setActivePanel(activePanel === "sections" ? null : "sections")
+            }
+            style={{
+              ...s.ghostBtn,
+              color: activePanel === "sections" ? "#f9a8d4" : "#fff",
+            }}
+          >
+            + Section
           </button>
 
-          <button onClick={() => setMenuOpen(!menuOpen)} style={dots}>
-            ⋯
+          <button
+            onClick={() =>
+              setActivePanel(activePanel === "projects" ? null : "projects")
+            }
+            style={{
+              ...s.ghostBtn,
+              color: activePanel === "projects" ? "#93c5fd" : "#fff",
+            }}
+          >
+            Projects
+          </button>
+
+          <button onClick={publish} disabled={loading} style={s.publishBtn}>
+            {loading ? "..." : "Publish"}
           </button>
         </div>
+      </header>
 
-        {menuOpen && (
-          <div style={menu}>
-            <h3 style={{ marginTop: 0 }}>Project settings</h3>
+      {activePanel && (
+        <aside style={s.sidePanel}>
+          <div style={s.sidePanelHeader}>
+            <span style={{ fontWeight: 700 }}>
+              {activePanel === "sections" ? "Add Sections" : "Projects"}
+            </span>
+            <button onClick={() => setActivePanel(null)} style={s.closeBtn}>
+              ×
+            </button>
+          </div>
 
-            <label style={label}>Template</label>
-            <select
-              value={template}
-              onChange={(e) => setTemplate(e.target.value)}
-              style={field}
-            >
-              {templates.map((t) => (
-                <option key={t} value={t} style={{ color: "#000" }}>
-                  {t}
-                </option>
+          {activePanel === "sections" && (
+            <div style={{ padding: 16, display: "grid", gap: 8 }}>
+              <p style={s.muted}>Add a premium section to the active page.</p>
+
+              {SECTION_TYPES.map((section) => (
+                <button
+                  key={section}
+                  onClick={() => addSection(section)}
+                  disabled={loading || !html}
+                  style={s.panelBtn}
+                >
+                  + {section}
+                </button>
               ))}
-            </select>
 
-            <label style={label}>Problem</label>
-            <input
-              value={problem}
-              onChange={(e) => setProblem(e.target.value)}
-              style={field}
-            />
+              <div
+                style={{
+                  marginTop: 16,
+                  borderTop: "1px solid rgba(255,255,255,.08)",
+                  paddingTop: 16,
+                }}
+              >
+                <p style={{ ...s.muted, marginBottom: 8 }}>AI hero image</p>
 
-            <label style={label}>Style</label>
-            <input
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              style={field}
-            />
+                <textarea
+                  value={imagePrompt}
+                  onChange={(e) => setImagePrompt(e.target.value)}
+                  placeholder="Ex: cinematic travel hero image"
+                  style={s.smallTextarea}
+                />
 
-            <label style={label}>Audience</label>
-            <input
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
-              style={field}
-            />
-
-            <div style={sectionBox}>
-              <h3 style={{ marginTop: 0 }}>AI sections</h3>
-              <p style={mutedSmall}>
-                Add a new premium section to the active page.
-              </p>
-
-              <div style={sectionGrid}>
-                {sectionTypes.map((section) => (
-                  <button
-                    key={section}
-                    onClick={() => addSection(section)}
-                    disabled={loading || !html}
-                    style={sectionBtn}
-                  >
-                    Add {section}
-                  </button>
-                ))}
+                <button
+                  onClick={generateHeroImage}
+                  disabled={loading || !html}
+                  style={s.panelBtnPrimary}
+                >
+                  Generate image
+                </button>
               </div>
             </div>
+          )}
 
-            {lastSaved && (
-              <div style={linkBox}>
-                <p style={{ margin: 0 }}>Autosaved draft at {lastSaved}</p>
+          {activePanel === "projects" && (
+            <div style={{ padding: 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: 12,
+                }}
+              >
+                <p style={s.muted}>Your published sites</p>
+                <button onClick={loadProjects} style={s.refreshBtn}>
+                  Refresh
+                </button>
               </div>
-            )}
 
-            {link && (
-              <div style={linkBox}>
-                <p style={{ margin: 0, marginBottom: 8 }}>Live link</p>
-                <a
-                  href={link}
-                  target="_blank"
+              {projects.length === 0 && <p style={s.muted}>No projects yet.</p>}
+
+              {projects.map((project) => (
+                <div key={project.id} style={s.projectCard}>
+                  <button
+                    onClick={() => {
+                      window.location.href = `/builder?id=${project.id}`;
+                    }}
+                    style={s.projectOpenBtn}
+                  >
+                    <strong style={{ fontSize: 13 }}>
+                      {project.name || "Untitled"}
+                    </strong>
+                    <span style={s.muted}>{project.template || "AI Website"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => deleteProject(project.id, project.name)}
+                    style={s.deleteBtn}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+
+              <div
+                style={{
+                  marginTop: 20,
+                  borderTop: "1px solid rgba(255,255,255,.08)",
+                  paddingTop: 16,
+                }}
+              >
+                <div
                   style={{
-                    color: "#86efac",
-                    wordBreak: "break-all",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: 12,
                   }}
                 >
-                  {link}
-                </a>
-              </div>
-            )}
+                  <p style={{ ...s.muted, margin: 0 }}>Leads inbox</p>
+                  <button onClick={loadLeads} style={s.refreshBtn}>
+                    Refresh
+                  </button>
+                </div>
 
-            <div style={projectsBox}>
-              <div style={rowBetween}>
-                <h3 style={{ margin: 0 }}>Projects</h3>
-                <button onClick={loadProjects} style={refresh}>
-                  Refresh
-                </button>
-              </div>
-
-              <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-                {projects.length === 0 && (
-                  <p style={mutedSmall}>No projects yet.</p>
-                )}
-
-                {projects.map((p) => (
-                  <div key={p.id} style={projectCard}>
-                    <button
-                      onClick={() => openProject(p.id)}
-                      style={projectOpenBtn}
-                    >
-                      <strong>{p.name || "Untitled project"}</strong>
-                      <span style={mutedSmall}>{p.template}</span>
-                      <span style={{ color: "#64748b", fontSize: 11 }}>
-                        Open in builder
-                      </span>
-                    </button>
-
-                    <button
-                      onClick={() => deleteProject(p.id, p.name)}
-                      style={deleteProjectBtn}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={leadsBox}>
-              <div style={rowBetween}>
-                <h3 style={{ margin: 0 }}>Leads inbox</h3>
-                <button onClick={loadLeads} style={refresh}>
-                  Refresh
-                </button>
-              </div>
-
-              <p style={mutedSmall}>
-                Messages collected from your published sites.
-              </p>
-
-              <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-                {leads.length === 0 && <p style={mutedSmall}>No leads yet.</p>}
+                {leads.length === 0 && <p style={s.muted}>No leads yet.</p>}
 
                 {leads.map((lead) => (
-                  <div key={lead.id} style={leadCard}>
-                    <strong>{lead.name || "Unnamed lead"}</strong>
-                    <span style={mutedSmall}>{lead.email || "No email"}</span>
-                    <span style={leadSite}>{lead.site_name || lead.site_id}</span>
+                  <div key={lead.id} style={s.leadCard}>
+                    <strong style={{ fontSize: 13 }}>
+                      {lead.name || "Unnamed"}
+                    </strong>
+                    <span style={s.muted}>{lead.email || "No email"}</span>
 
-                    {lead.message && <p style={leadMessage}>{lead.message}</p>}
+                    {lead.message && (
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          fontSize: 12,
+                          color: "#d1d5db",
+                        }}
+                      >
+                        {lead.message}
+                      </p>
+                    )}
 
                     {lead.created_at && (
-                      <span style={leadDate}>
+                      <span style={{ fontSize: 11, color: "#52525b" }}>
                         {new Date(lead.created_at).toLocaleString()}
                       </span>
                     )}
                   </div>
                 ))}
               </div>
-            </div>
 
-            <div style={factsBox}>
-              <h3 style={{ marginTop: 0 }}>Project facts</h3>
-              <p style={mutedSmall}>Pages: {Object.keys(files).length || 0}</p>
-              <p style={mutedSmall}>Template: {template}</p>
-              <p style={mutedSmall}>Style: {style}</p>
-              <p style={mutedSmall}>Audience: {audience}</p>
-              <p style={mutedSmall}>User: {userEmail}</p>
-              <p style={mutedSmall}>Autosaved: {lastSaved || "Not yet"}</p>
-
-              {selectedText && (
-                <p style={mutedSmall}>Last selected: {selectedText}</p>
+              {link && (
+                <div style={s.linkBox}>
+                  <p
+                    style={{
+                      margin: "0 0 6px",
+                      fontSize: 12,
+                      color: "#a1a1aa",
+                    }}
+                  >
+                    Live link
+                  </p>
+                  <a
+                    href={link}
+                    target="_blank"
+                    style={{
+                      color: "#f9a8d4",
+                      fontSize: 13,
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {link}
+                  </a>
+                </div>
               )}
-            </div>
 
-            <button onClick={logout} style={logoutBtn}>
-              Log out
-            </button>
-          </div>
-        )}
-      </header>
-
-      <section style={stageWrap}>
-        <div ref={previewOuterRef} style={stage}>
-          {previewHtml ? (
-            <div
-              style={{
-                ...canvas,
-                transform: `scale(${scale})`,
-              }}
-            >
-              <iframe
-                ref={iframeRef}
-                srcDoc={previewHtml}
-                style={iframe}
-                sandbox="allow-same-origin allow-scripts"
-              />
-            </div>
-          ) : (
-            <div style={empty}>
-              <h2>Start building</h2>
-              <p>Use the chat below to build your website.</p>
+              <button onClick={logout} style={s.logoutBtn}>
+                Log out ({userEmail})
+              </button>
             </div>
           )}
-        </div>
+        </aside>
+      )}
+
+      <section style={s.stage} ref={previewOuterRef}>
+        {previewHtml ? (
+          <div style={{ ...s.canvas, transform: `scale(${scale})` }}>
+            <iframe
+              ref={iframeRef}
+              srcDoc={previewHtml}
+              style={s.iframe}
+              sandbox="allow-same-origin allow-scripts"
+            />
+          </div>
+        ) : (
+          <div style={s.emptyState}>
+            <div style={s.emptyIcon}>P</div>
+            <h2 style={{ margin: "12px 0 6px", fontSize: 22 }}>
+              Start building
+            </h2>
+            <p style={s.muted}>Use the chat below to generate your website.</p>
+          </div>
+        )}
       </section>
 
-      <footer style={bottomBar}>
-        <div style={chatStrip}>
-          <div style={miniChat}>
-            {messages.slice(-4).map((m, i) => (
-              <div key={i} style={miniMessage}>
-                <b>{m.role === "user" ? "You" : "AI"}:</b> {m.text}
+      <footer style={s.bottomBar}>
+        <div style={s.chatStrip}>
+          <div style={s.messageLog}>
+            {messages.slice(-5).map((message, index) => (
+              <div
+                key={index}
+                style={{
+                  ...s.msgRow,
+                  justifyContent:
+                    message.role === "user" ? "flex-end" : "flex-start",
+                }}
+              >
+                <span
+                  style={{
+                    ...s.msgBubble,
+                    background:
+                      message.role === "user"
+                        ? "rgba(99,102,241,.25)"
+                        : "rgba(255,255,255,.06)",
+                  }}
+                >
+                  {message.text}
+                </span>
               </div>
             ))}
 
             {loading && (
-              <div style={thinking}>
-                <span style={pulse} />
-                Streaming generation...
+              <div style={{ ...s.msgRow, justifyContent: "flex-start" }}>
+                <span
+                  style={{
+                    ...s.msgBubble,
+                    color: "#f9a8d4",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <span style={s.pulseDot} /> Working...
+                </span>
               </div>
             )}
 
             <div ref={messagesEndRef} />
           </div>
 
-          <div style={composer}>
+          <div style={s.composer}>
             <textarea
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
@@ -1210,7 +1275,7 @@ Rules:
                   ? "Ask AI to change the site..."
                   : "Describe what to build..."
               }
-              style={textarea}
+              style={s.composerTextarea}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -1219,7 +1284,14 @@ Rules:
               }}
             />
 
-            <button onClick={edit} disabled={loading} style={send}>
+            <button
+              onClick={edit}
+              disabled={loading || !chatInput.trim()}
+              style={{
+                ...s.sendBtn,
+                opacity: chatInput.trim() ? 1 : 0.4,
+              }}
+            >
               ↑
             </button>
           </div>
@@ -1229,515 +1301,492 @@ Rules:
   );
 }
 
-const startPage: React.CSSProperties = {
-  minHeight: "100vh",
-  display: "grid",
-  placeItems: "center",
-  background:
-    "radial-gradient(circle at top left, rgba(34,197,94,.22), transparent 32%), #09090b",
-  color: "#fff",
-  fontFamily: "Inter, system-ui, Arial",
-  padding: 24,
-};
-
-const startCard: React.CSSProperties = {
-  width: "min(860px, 100%)",
-  padding: 34,
-  borderRadius: 30,
-  background: "#0f0f12",
+const s: Record<string, React.CSSProperties> = {
+  splash: {
+    minHeight: "100vh",
+    display: "grid",
+    placeItems: "center",
+    background:
+      "radial-gradient(circle at 20% 35%,rgba(37,99,235,.4),transparent 34%),radial-gradient(circle at 80% 35%,rgba(236,72,153,.4),transparent 35%),#050509",
+    color: "#fff",
+    fontFamily: "'Inter',system-ui,Arial",
+    padding: 24,
+  },
+  splashInner: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 12,
+  },
+  card: {
+    width: "min(800px,100%)",
+    padding: "36px 40px",
+    borderRadius: 28,
+    background: "rgba(8,8,16,.82)",
+    border: "1px solid rgba(255,255,255,.1)",
+    boxShadow:
+      "0 40px 120px rgba(0,0,0,.6),0 0 60px rgba(236,72,153,.1)",
+    backdropFilter: "blur(18px)",
+  },
+  logo: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    background: "linear-gradient(135deg,#2563eb,#a855f7,#ec4899)",
+    color: "#fff",
+    fontWeight: 900,
+    display: "grid",
+    placeItems: "center",
+    fontSize: 20,
+  },
+  logoSmall: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    background: "linear-gradient(135deg,#2563eb,#a855f7,#ec4899)",
+    color: "#fff",
+    fontWeight: 900,
+    display: "grid",
+    placeItems: "center",
+    flexShrink: 0,
+    fontSize: 14,
+  },
+  eyebrow: {
+    color: "#f472b6",
+    fontSize: 12,
+    fontWeight: 800,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    margin: "16px 0 6px",
+  },
+  cardTitle: {
+    fontSize: 52,
+    lineHeight: 1.05,
+    margin: "6px 0 12px",
+    fontWeight: 800,
+  },
+  cardText: {
+    color: "#c4c4cc",
+    fontSize: 17,
+    lineHeight: 1.65,
+    margin: "0 0 20px",
+  },
+  splashMuted: {
+    color: "#71717a",
+    fontSize: 14,
+  },
+  bigTextarea: {
+    width: "100%",
+    height: 110,
+    padding: "14px 16px",
+    borderRadius: 18,
+    border: "1px solid rgba(96,165,250,.5)",
+    background: "rgba(3,7,18,.7)",
+    color: "#fff",
+    outline: "none",
+    resize: "none",
+    fontSize: 15,
+    lineHeight: 1.6,
+    boxSizing: "border-box",
+  },
+  primaryBtn: {
+    width: "100%",
+    marginTop: 14,
+    padding: "16px 20px",
+    borderRadius: 999,
+    border: "none",
+    background: "linear-gradient(90deg,#2563eb,#a855f7,#ec4899)",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    fontSize: 15,
+    boxShadow: "0 12px 40px rgba(236,72,153,.2)",
+    transition: "all .2s",
+  },
+  starterGrid: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 20,
+  },
+  starterPill: {
+    padding: "9px 14px",
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,.1)",
+    background: "rgba(255,255,255,.05)",
+    color: "#d4d4d8",
+    cursor: "pointer",
+    fontSize: 13,
+    transition: "all .15s",
+  },
+  app: {
+    height: "100vh",
+    display: "grid",
+    gridTemplateRows: "56px minmax(0,1fr) 170px",
+    background: "#050509",
+    color: "#fff",
+    fontFamily: "'Inter',system-ui,Arial",
+    overflow: "hidden",
+    position: "relative",
+  },
+  topbar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 16px",
+    borderBottom: "1px solid rgba(255,255,255,.07)",
+    background: "rgba(6,6,12,.95)",
+    backdropFilter: "blur(20px)",
+    gap: 12,
+    zIndex: 100,
+  },
+  brand: {
+    display: "flex",
+    gap: 10,
+    alignItems: "center",
+    minWidth: 0,
+  },
+  topActions: {
+    display: "flex",
+    gap: 4,
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  tabBtn: {
+    padding: "5px 10px",
+    borderRadius: 8,
+    border: "1px solid transparent",
+    background: "transparent",
+    color: "#a1a1aa",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontSize: 12,
+    transition: "all .15s",
+  },
+  ghostBtn: {
+    padding: "6px 11px",
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,.08)",
+    background: "rgba(255,255,255,.04)",
+    color: "#fff",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontSize: 12,
+    transition: "all .15s",
+    whiteSpace: "nowrap",
+  },
+  publishBtn: {
+    padding: "7px 16px",
+    borderRadius: 999,
+    border: "none",
+    background: "linear-gradient(90deg,#2563eb,#a855f7,#ec4899)",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    fontSize: 12,
+    whiteSpace: "nowrap",
+    boxShadow: "0 4px 16px rgba(124,58,237,.3)",
+  },
+  divider: {
+    width: 1,
+    height: 20,
+    background: "rgba(255,255,255,.08)",
+    margin: "0 4px",
+  },
+  sidePanel: {
+    position: "fixed",
+    right: 0,
+    top: 56,
+    bottom: 170,
+    width: 320,
+    background: "rgba(8,8,16,.97)",
+    borderLeft: "1px solid rgba(255,255,255,.09)",
+    zIndex: 200,
+    overflowY: "auto",
+    backdropFilter: "blur(20px)",
+  },
+  sidePanelHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "14px 16px",
+    borderBottom: "1px solid rgba(255,255,255,.08)",
+    position: "sticky",
+    top: 0,
+    background: "rgba(8,8,16,.97)",
+    backdropFilter: "blur(20px)",
+  },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,.1)",
+    background: "rgba(255,255,255,.05)",
+    color: "#a1a1aa",
+    cursor: "pointer",
+    fontSize: 13,
+  },
+  panelBtn: {
+    width: "100%",
+    padding: "11px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.09)",
+    background: "rgba(255,255,255,.04)",
+    color: "#e4e4e7",
+    fontWeight: 600,
+    cursor: "pointer",
+    textAlign: "left",
+    fontSize: 13,
+    transition: "all .15s",
+  },
+  panelBtnPrimary: {
+    width: "100%",
+    marginTop: 8,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "none",
+    background: "linear-gradient(90deg,#2563eb,#a855f7,#ec4899)",
+    color: "#fff",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 13,
+  },
+  smallTextarea: {
+    width: "100%",
+    height: 72,
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,.09)",
+    background: "rgba(255,255,255,.04)",
+    color: "#fff",
+    outline: "none",
+    resize: "none",
+    fontSize: 13,
+    boxSizing: "border-box",
+  },
+  projectCard: {
+    padding: 12,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.07)",
+    background: "rgba(255,255,255,.04)",
+    marginBottom: 8,
+    display: "grid",
+    gap: 4,
+  },
+  projectOpenBtn: {
+    border: "none",
+    background: "transparent",
+    color: "#fff",
+    cursor: "pointer",
+    textAlign: "left",
+    display: "grid",
+    gap: 3,
+    padding: 0,
+  },
+  deleteBtn: {
+    marginTop: 6,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(244,63,94,.3)",
+    background: "rgba(244,63,94,.08)",
+    color: "#fca5a5",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 12,
+  },
+  leadCard: {
+    padding: 12,
+    borderRadius: 12,
+    border: "1px solid rgba(236,72,153,.15)",
+    background: "rgba(236,72,153,.06)",
+    marginBottom: 8,
+    display: "grid",
+    gap: 4,
+  },
+  linkBox: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+    background: "rgba(37,99,235,.1)",
+    border: "1px solid rgba(96,165,250,.2)",
+  },
+  logoutBtn: {
+    width: "100%",
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 999,
+    border: "1px solid rgba(244,63,94,.2)",
+    background: "rgba(244,63,94,.08)",
+    color: "#fca5a5",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 13,
+  },
+  refreshBtn: {
+    padding: "5px 9px",
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,.09)",
+    background: "rgba(255,255,255,.04)",
+    color: "#a1a1aa",
+    cursor: "pointer",
+    fontSize: 12,
+  },
+  stage: {
+    position: "relative",
+    overflow: "auto",
+    background:
+      "radial-gradient(circle at 20% 20%,rgba(37,99,235,.12),transparent 30%),radial-gradient(circle at 80% 10%,rgba(236,72,153,.1),transparent 32%),#07070c",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "flex-start",
+    padding: 20,
+  },
+  canvas: {
+    width: 1440,
+    minHeight: 1100,
+    transformOrigin: "top center",
+    background: "#fff",
+    borderRadius: 20,
+    overflow: "hidden",
+    boxShadow:
+      "0 40px 120px rgba(0,0,0,.7),0 0 60px rgba(37,99,235,.12)",
+    border: "1px solid rgba(255,255,255,.08)",
+  },
+  iframe: {
+    width: 1440,
+    height: 1100,
+    border: "none",
+    display: "block",
+    background: "#fff",
+  },
+  emptyState: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100%",
+    textAlign: "center",
+    color: "#e5e7eb",
+  },
+  emptyIcon: {
+    fontSize: 36,
+    color: "#3f3f46",
+  },
+  bottomBar: {
+    borderTop: "1px solid rgba(255,255,255,.07)",
+    background: "rgba(6,6,12,.96)",
+    padding: "12px 16px",
+    backdropFilter: "blur(20px)",
+  },
+  chatStrip: {
+    maxWidth: 1200,
+    margin: "0 auto",
+    display: "grid",
+    gridTemplateColumns: "1fr 1.8fr",
+    gap: 12,
+    height: "100%",
+  },
+  messageLog: {
+    overflowY: "auto",
+    padding: "8px 10px",
+    borderRadius: 14,
+    background: "rgba(255,255,255,.03)",
+    border: "1px solid rgba(255,255,255,.06)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  msgRow: {
+    display: "flex",
+  },
+  msgBubble: {
+    maxWidth: "85%",
+    padding: "6px 10px",
+    borderRadius: 10,
+    fontSize: 12,
+    color: "#d1d5db",
+    lineHeight: 1.45,
+  },
+  composer: {
+    display: "grid",
+    gridTemplateColumns: "1fr 42px",
+    gap: 8,
+    alignItems: "end",
+  },
+  composerTextarea: {
+    height: 118,
+    padding: "12px 14px",
+    borderRadius: 16,
+    border: "1px solid rgba(99,102,241,.3)",
+    background: "rgba(255,255,255,.04)",
+    color: "#fff",
+    outline: "none",
+    resize: "none",
+    fontSize: 14,
+    lineHeight: 1.55,
+    boxShadow: "0 0 0 1px rgba(236,72,153,.08)",
+  },
+  sendBtn: {
+    height: 42,
+    borderRadius: 999,
+    border: "none",
+    background: "linear-gradient(135deg,#2563eb,#a855f7,#ec4899)",
+    color: "#fff",
+    fontWeight: 900,
+    cursor: "pointer",
+    fontSize: 18,
+    transition: "all .15s",
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    background: "#ec4899",
+    boxShadow: "0 0 12px #ec4899",
+    display: "inline-block",
+  },
+  toast: {
+  position: "fixed",
+  top: 18,
+  left: "50%",
+  transform: "translateX(-50%)",
+  zIndex: 99999,
+  padding: "14px 18px",
+  borderRadius: 18,
+  background: "rgba(10,10,18,.96)",
   border: "1px solid rgba(255,255,255,.08)",
-  boxShadow: "0 30px 120px rgba(0,0,0,.45)",
-};
-
-const eyebrow: React.CSSProperties = {
-  color: "#86efac",
-  fontSize: 13,
-  fontWeight: 900,
-  letterSpacing: 1.5,
-  textTransform: "uppercase",
-};
-
-const startTitle: React.CSSProperties = {
-  fontSize: 58,
-  lineHeight: 1,
-  margin: "10px 0",
-};
-
-const startText: React.CSSProperties = {
-  color: "#9ca3af",
-  fontSize: 18,
-  lineHeight: 1.6,
-};
-
-const startGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
+  boxShadow: "0 20px 100px rgba(0,0,0,.55)",
+  color: "#fff",
+  display: "flex",
   gap: 14,
-};
-
-const bigTextArea: React.CSSProperties = {
-  width: "100%",
-  height: 110,
-  padding: 14,
-  borderRadius: 18,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "#111114",
-  color: "#fff",
-  outline: "none",
-  resize: "none",
-};
-
-const startButton: React.CSSProperties = {
-  width: "100%",
-  marginTop: 18,
-  padding: 16,
-  borderRadius: 999,
-  border: "none",
-  background: "#22c55e",
-  color: "#052e16",
-  fontWeight: 950,
-  cursor: "pointer",
-};
-
-const starterGrid: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 10,
-  marginTop: 18,
-};
-
-const starterPill: React.CSSProperties = {
-  padding: "10px 13px",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.04)",
-  color: "#fff",
-  cursor: "pointer",
-};
-
-const app: React.CSSProperties = {
-  height: "100vh",
-  display: "grid",
-  gridTemplateRows: "auto minmax(0,1fr) 190px",
-  background: "#09090b",
-  color: "#fff",
-  fontFamily: "Inter, system-ui, Arial",
-  overflow: "hidden",
-};
-
-const topbar: React.CSSProperties = {
-  position: "relative",
-  padding: "10px 12px",
-  borderBottom: "1px solid rgba(255,255,255,.08)",
-  background: "#0f0f12",
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 560px)",
-  gap: 10,
   alignItems: "center",
-  overflow: "visible",
-};
+  backdropFilter: "blur(20px)",
+},
 
-const brand: React.CSSProperties = {
-  display: "flex",
-  gap: 10,
-  alignItems: "center",
-  minWidth: 0,
-  overflow: "hidden",
-};
-
-const mark: React.CSSProperties = {
-  width: 44,
-  height: 44,
-  borderRadius: 14,
-  background: "linear-gradient(135deg,#22c55e,#a7f3d0)",
-  color: "#052e16",
-  fontWeight: 950,
-  display: "grid",
-  placeItems: "center",
-  flexShrink: 0,
-};
-
-const markSmall: React.CSSProperties = {
-  width: 34,
-  height: 34,
-  borderRadius: 12,
-  background: "linear-gradient(135deg,#22c55e,#a7f3d0)",
-  color: "#052e16",
-  fontWeight: 950,
-  display: "grid",
-  placeItems: "center",
-  flexShrink: 0,
-};
-
-const topActions: React.CSSProperties = {
-  display: "flex",
-  gap: 6,
-  alignItems: "center",
-  justifyContent: "flex-end",
-  minWidth: 0,
-  width: "100%",
-  overflowX: "auto",
-  paddingBottom: 2,
-  scrollbarWidth: "none",
-};
-
-const tabBtn: React.CSSProperties = {
-  padding: "8px 10px",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.08)",
-  fontWeight: 800,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-  fontSize: 12,
-};
-
-const ghost: React.CSSProperties = {
-  padding: "9px 11px",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.1)",
-  background: "rgba(255,255,255,.04)",
-  color: "#fff",
-  fontWeight: 800,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-  fontSize: 12,
-};
-
-const reviewBtn: React.CSSProperties = {
-  padding: "9px 11px",
-  borderRadius: 999,
-  border: "1px solid rgba(134,239,172,.35)",
-  background: "rgba(34,197,94,.12)",
-  color: "#bbf7d0",
-  fontWeight: 900,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-  fontSize: 12,
-};
-
-const publishBtn: React.CSSProperties = {
-  padding: "9px 12px",
-  borderRadius: 999,
-  border: "none",
-  background: "#22c55e",
-  color: "#052e16",
-  fontWeight: 950,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-  fontSize: 12,
-};
-
-const dots: React.CSSProperties = {
-  minWidth: 34,
-  width: 34,
-  height: 34,
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.1)",
-  background: "rgba(255,255,255,.04)",
-  color: "#fff",
-  fontSize: 20,
-  cursor: "pointer",
-  flexShrink: 0,
-};
-
-const menu: React.CSSProperties = {
-  position: "absolute",
-  right: 18,
-  top: 58,
-  width: 380,
-  maxHeight: "calc(100vh - 90px)",
-  overflowY: "auto",
-  padding: 18,
-  borderRadius: 22,
-  background: "#0f0f12",
-  border: "1px solid rgba(255,255,255,.1)",
-  boxShadow: "0 30px 100px rgba(0,0,0,.55)",
-  zIndex: 20,
-};
-
-const sectionBox: React.CSSProperties = {
-  marginTop: 22,
-  padding: 14,
-  borderRadius: 18,
-  background: "rgba(34,197,94,.08)",
-  border: "1px solid rgba(34,197,94,.18)",
-};
-
-const sectionGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 10,
-  marginTop: 14,
-};
-
-const sectionBtn: React.CSSProperties = {
-  padding: "10px 11px",
-  borderRadius: 999,
-  border: "1px solid rgba(134,239,172,.28)",
-  background: "rgba(34,197,94,.12)",
-  color: "#bbf7d0",
-  fontWeight: 900,
-  cursor: "pointer",
-};
-
-const stageWrap: React.CSSProperties = {
-  minHeight: 0,
-  padding: 18,
-};
-
-const stage: React.CSSProperties = {
-  height: "100%",
-  overflow: "auto",
-  background: "#111114",
-  border: "1px solid rgba(255,255,255,.08)",
-  borderRadius: 24,
-  padding: 10,
-};
-
-const canvas: React.CSSProperties = {
-  width: 1440,
-  minHeight: 1100,
-  transformOrigin: "top left",
-  background: "#fff",
-  borderRadius: 18,
-  overflow: "hidden",
-  boxShadow: "0 24px 80px rgba(0,0,0,.55)",
-};
-
-const iframe: React.CSSProperties = {
-  width: 1440,
-  height: 1100,
-  border: "none",
-  display: "block",
-  background: "#fff",
-};
-
-const empty: React.CSSProperties = {
-  height: "100%",
-  display: "grid",
-  placeItems: "center",
-  color: "#e5e7eb",
-  textAlign: "center",
-};
-
-const bottomBar: React.CSSProperties = {
-  borderTop: "1px solid rgba(255,255,255,.08)",
-  background: "#0f0f12",
-  padding: 14,
-};
-
-const chatStrip: React.CSSProperties = {
-  maxWidth: 1180,
-  margin: "0 auto",
-  display: "grid",
-  gridTemplateColumns: "1fr 1.6fr",
-  gap: 14,
-  height: "100%",
-};
-
-const miniChat: React.CSSProperties = {
-  overflowY: "auto",
-  padding: 12,
-  borderRadius: 18,
-  background: "#111114",
-  border: "1px solid rgba(255,255,255,.06)",
-};
-
-const miniMessage: React.CSSProperties = {
-  color: "#d1d5db",
+toastLink: {
+  color: "#f9a8d4",
+  textDecoration: "none",
+  fontWeight: 700,
   fontSize: 13,
-  marginBottom: 8,
-  whiteSpace: "pre-wrap",
-};
-
-const composer: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 48px",
-  gap: 10,
-  alignItems: "end",
-};
-
-const textarea: React.CSSProperties = {
-  height: 128,
-  padding: 15,
-  borderRadius: 20,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "#111114",
-  color: "#fff",
-  outline: "none",
-  resize: "none",
-};
-
-const send: React.CSSProperties = {
-  height: 48,
-  borderRadius: 999,
-  border: "none",
-  background: "#fff",
-  color: "#09090b",
-  fontWeight: 950,
-  cursor: "pointer",
-};
-
-const mutedSmall: React.CSSProperties = {
-  margin: 0,
-  color: "#9ca3af",
-  fontSize: 12,
-  lineHeight: 1.45,
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
-
-const thinking: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  color: "#a7f3d0",
-  fontSize: 13,
-  padding: 10,
-};
-
-const pulse: React.CSSProperties = {
-  width: 9,
-  height: 9,
-  borderRadius: "50%",
-  background: "#22c55e",
-  boxShadow: "0 0 24px #22c55e",
-};
-
-const label: React.CSSProperties = {
-  display: "block",
-  marginTop: 18,
-  marginBottom: 8,
-  color: "#d1d5db",
-  fontSize: 13,
-  fontWeight: 800,
-};
-
-const field: React.CSSProperties = {
-  width: "100%",
-  padding: 12,
-  borderRadius: 14,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "#111114",
-  color: "#fff",
-  outline: "none",
-};
-
-const linkBox: React.CSSProperties = {
-  marginTop: 18,
-  padding: 14,
-  borderRadius: 16,
-  background: "rgba(34,197,94,.12)",
-  border: "1px solid rgba(34,197,94,.25)",
-};
-
-const projectsBox: React.CSSProperties = {
-  marginTop: 24,
-  padding: 14,
-  borderRadius: 18,
-  background: "#111114",
-  border: "1px solid rgba(255,255,255,.06)",
-};
-
-const leadsBox: React.CSSProperties = {
-  marginTop: 18,
-  padding: 14,
-  borderRadius: 18,
-  background: "#111114",
-  border: "1px solid rgba(34,197,94,.16)",
-};
-
-const factsBox: React.CSSProperties = {
-  marginTop: 18,
-  padding: 14,
-  borderRadius: 18,
-  background: "#111114",
-  border: "1px solid rgba(255,255,255,.06)",
-};
-
-const rowBetween: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-};
-
-const refresh: React.CSSProperties = {
-  padding: "7px 10px",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.04)",
-  color: "#fff",
-  cursor: "pointer",
-};
-
-const projectCard: React.CSSProperties = {
-  padding: 12,
-  borderRadius: 14,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.04)",
-  color: "#fff",
-  display: "grid",
-  gap: 4,
-};
-
-const projectOpenBtn: React.CSSProperties = {
-  border: "none",
-  background: "transparent",
-  color: "#fff",
-  cursor: "pointer",
-  textAlign: "left",
-  display: "grid",
-  gap: 4,
-  padding: 0,
-};
-
-const deleteProjectBtn: React.CSSProperties = {
-  marginTop: 10,
-  padding: "8px 10px",
-  borderRadius: 999,
-  border: "1px solid rgba(239,68,68,.25)",
-  background: "rgba(239,68,68,.12)",
-  color: "#fecaca",
-  fontWeight: 900,
-  cursor: "pointer",
-};
-
-const leadCard: React.CSSProperties = {
-  padding: 12,
-  borderRadius: 14,
-  border: "1px solid rgba(34,197,94,.16)",
-  background: "rgba(34,197,94,.06)",
-  color: "#fff",
-  display: "grid",
-  gap: 5,
-};
-
-const leadSite: React.CSSProperties = {
-  color: "#86efac",
-  fontSize: 11,
-};
-
-const leadMessage: React.CSSProperties = {
-  margin: "6px 0",
-  color: "#d1d5db",
-  fontSize: 13,
-  lineHeight: 1.45,
-};
-
-const leadDate: React.CSSProperties = {
-  color: "#64748b",
-  fontSize: 11,
-};
-
-const logoutBtn: React.CSSProperties = {
-  width: "100%",
-  marginTop: 18,
-  padding: 14,
-  borderRadius: 999,
-  border: "none",
-  background: "rgba(239,68,68,.16)",
-  color: "#fecaca",
-  fontWeight: 900,
-  cursor: "pointer",
+},
+  toastClose: {
+    marginLeft: 4,
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,.1)",
+    background: "rgba(255,255,255,.05)",
+    color: "#a1a1aa",
+    cursor: "pointer",
+    fontSize: 12,
+  },
+  muted: {
+    margin: 0,
+    color: "#71717a",
+    fontSize: 12,
+    lineHeight: 1.45,
+  },
+  dot: {
+    color: "#3f3f46",
+  },
 };

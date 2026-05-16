@@ -1,149 +1,244 @@
+"use client";
+
 import Link from "next/link";
+import { useMemo, useState } from "react";
 
-const recentProjects = [
-  "AI Receptionist",
-  "Local Trainer Marketplace",
-  "MealPlanPro",
-  "Lead Finder AI",
+const categories = [
+  "All",
+  "AI",
+  "Local Business",
+  "Marketplace",
+  "SaaS",
+  "Mobile App",
+  "B2B",
+  "Consumer",
 ];
 
-const ideaCards = [
-  {
-    title: "AI SaaS landing page",
-    text: "Build a premium SaaS page with pricing, features and CTA.",
-  },
-  {
-    title: "Local business website",
-    text: "Generate a modern site for dentists, gyms, cleaners or agencies.",
-  },
-  {
-    title: "Marketplace startup",
-    text: "Create a marketplace website with offer, trust and lead capture.",
-  },
+const niches = [
+  "dentists",
+  "personal trainers",
+  "restaurants",
+  "students",
+  "real estate agents",
+  "cleaning companies",
+  "small gyms",
+  "barbershops",
+  "dog owners",
+  "freelancers",
+  "parents",
+  "local shops",
 ];
+
+const problems = Array.from({ length: 120 }).map((_, i) => {
+  const niche = niches[i % niches.length];
+  const category = categories[(i % (categories.length - 1)) + 1];
+
+  const titles = [
+    `AI booking assistant for ${niche}`,
+    `Lead finder for ${niche}`,
+    `Review collector for ${niche}`,
+    `Simple CRM for ${niche}`,
+    `Marketplace for ${niche}`,
+    `Automation dashboard for ${niche}`,
+    `Website builder for ${niche}`,
+    `Client portal for ${niche}`,
+  ];
+
+  const title = titles[i % titles.length];
+
+  return {
+    id: i + 1,
+    title,
+    category,
+    market: niche,
+    pain: `${niche} often waste time on repetitive tasks, missed leads, manual messages, bookings and follow-ups.`,
+    website: `A premium website selling a simple product that helps ${niche} save time, get more customers and manage work faster.`,
+    monetization:
+      i % 3 === 0
+        ? "Monthly subscription"
+        : i % 3 === 1
+        ? "Lead generation fees"
+        : "One-time setup plus monthly support",
+    prompt: `Build a premium ${category} startup website for: ${title}. The website should explain the problem, show the product, include trust sections, pricing, contact form and a strong CTA.`,
+  };
+});
 
 export default function Home() {
+  const [activeView, setActiveView] = useState("ideas");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("All");
+  const [customIdea, setCustomIdea] = useState("");
+  const [selected, setSelected] = useState(problems[0]);
+
+  const filteredProblems = useMemo(() => {
+    return problems.filter((p) => {
+      const matchesFilter = filter === "All" || p.category === filter;
+
+      const q = query.toLowerCase();
+      const matchesSearch =
+        p.title.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.market.toLowerCase().includes(q) ||
+        p.pain.toLowerCase().includes(q);
+
+      return matchesFilter && matchesSearch;
+    });
+  }, [query, filter]);
+
+  const customHref = customIdea.trim()
+    ? `/builder?idea=${encodeURIComponent(customIdea.trim())}`
+    : "/builder";
+
   return (
     <main style={app}>
       <aside style={sidebar}>
-        <div style={sidebarTop}>
-          <div style={brandMark}>P</div>
-          <button style={collapseBtn}>◧</button>
-        </div>
+        <button onClick={() => setActiveView("ideas")} style={logoBox}>
+          <div style={logo}>P</div>
+          <h2 style={sideTitle}>Problem to Profit</h2>
+          <p style={sideText}>Find problems. Build websites. Launch fast.</p>
+        </button>
 
-        <div style={workspace}>
+        <Link href="/builder" style={workspace}>
           <div style={avatar}>E</div>
           <span>Elliot&apos;s P2P</span>
-          <span style={{ marginLeft: "auto" }}>⌄</span>
-        </div>
+          <span style={{ marginLeft: "auto" }}>Builder</span>
+        </Link>
 
-        <nav style={sideNav}>
-          <Link href="/" style={sideActive}>
-            ⌂ Home
-          </Link>
-          <Link href="/builder" style={sideLink}>
-            ✦ Builder
-          </Link>
-          <Link href="/builder" style={sideLink}>
-            ⌕ Projects
-          </Link>
-          <Link href="/builder" style={sideLink}>
-            ⚙ Templates
+        <nav style={nav}>
+          <button
+            onClick={() => setActiveView("ideas")}
+            style={activeView === "ideas" ? navActive : navButton}
+          >
+            Problem ideas
+          </button>
+
+          <button
+            onClick={() => setActiveView("custom")}
+            style={activeView === "custom" ? navActive : navButton}
+          >
+            Build custom idea
+          </button>
+
+          <Link href="/builder" style={navLink}>
+            Builder
           </Link>
         </nav>
 
-        <div style={sideGroup}>
-          <p style={sideLabel}>Projects</p>
-          {recentProjects.map((project) => (
-            <Link key={project} href="/builder" style={recentLink}>
-              {project}
-            </Link>
-          ))}
+        <div style={upgrade}>
+          <strong>Opportunity engine</strong>
+          <p style={sideText}>
+            Browse startup problems and generate a website from any idea.
+          </p>
         </div>
-
-        <div style={upgradeCard}>
-          <strong>Problem to Profit</strong>
-          <p style={upgradeText}>AI websites, leads and startup pages.</p>
-        </div>
-
-        <div style={profileDot}>E</div>
       </aside>
 
       <section style={mainArea}>
-        <div style={heroPanel}>
-          <div style={heroGlow} />
+        <section style={hero}>
+          <div style={glowBlue} />
+          <div style={glowPink} />
 
-          <div style={topPill}>🔥 Build full startup websites with AI →</div>
+          <div style={pill}>AI startup problem finder</div>
 
-          <h1 style={heroTitle}>Let&apos;s build something, Elliot</h1>
+          <h1 style={title}>
+            Find a problem. <span style={titleGradient}>Build the website.</span>
+          </h1>
+
+          <p style={subtitle}>
+            Browse 100+ curated problems inspired by real online complaints,
+            business gaps and startup opportunities.
+          </p>
 
           <div style={promptBox}>
-            <textarea
+            <input
+              value={customIdea}
+              onChange={(e) => setCustomIdea(e.target.value)}
+              placeholder="Or write your own website idea..."
               style={promptInput}
-              placeholder="Ask P2P to generate a startup website..."
-              defaultValue=""
             />
 
-            <div style={promptBottom}>
-              <Link href="/builder" style={plusBtn}>
-                +
-              </Link>
-
-              <div style={promptActions}>
-                <span style={buildMode}>Build ⌄</span>
-                <Link href="/builder" style={sendBtn}>
-                  ↑
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          <div style={floatingStats}>
-            <div style={statCard}>
-              <strong>100+</strong>
-              <span>website ideas</span>
-            </div>
-            <div style={statCard}>
-              <strong>Live</strong>
-              <span>publish links</span>
-            </div>
-            <div style={statCard}>
-              <strong>AI</strong>
-              <span>edit + review</span>
-            </div>
-          </div>
-        </div>
-
-        <div style={projectsPanel}>
-          <div style={tabs}>
-            <button style={tabActive}>My projects</button>
-            <button style={tab}>Recently viewed</button>
-            <button style={tab}>Most visitors today</button>
-            <button style={tab}>P2P templates</button>
-
-            <Link href="/builder" style={browseAll}>
-              Browse all →
+            <Link href={customHref} style={generateSmall}>
+              Generate website
             </Link>
           </div>
+        </section>
 
-          <div style={cardGrid}>
-            {ideaCards.map((card, index) => (
-              <Link key={card.title} href="/builder" style={projectCard}>
-                <div style={cardPreview(index)}>
-                  <div style={miniBar} />
-                  <div style={miniHero} />
-                  <div style={miniLine} />
-                  <div style={{ ...miniLine, width: "55%" }} />
-                </div>
+        <section style={panel}>
+          <div style={panelHeader}>
+            <div>
+              <h2 style={{ margin: 0 }}>Problem opportunities</h2>
+              <p style={muted}>
+                Select a problem to see what the website should sell.
+              </p>
+            </div>
 
-                <div style={cardBody}>
-                  <strong>{card.title}</strong>
-                  <p>{card.text}</p>
-                </div>
-              </Link>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search problems..."
+              style={search}
+            />
+          </div>
+
+          <div style={filters}>
+            {categories.map((c) => (
+              <button
+                key={c}
+                onClick={() => setFilter(c)}
+                style={filter === c ? filterActive : filterBtn}
+              >
+                {c}
+              </button>
             ))}
           </div>
-        </div>
+
+          <div style={contentGrid}>
+            <div style={ideaList}>
+              {filteredProblems.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setSelected(p)}
+                  style={selected.id === p.id ? ideaActive : ideaCard}
+                >
+                  <div style={ideaTop}>
+                    <span style={badge}>{p.category}</span>
+                    <span style={ideaId}>#{p.id}</span>
+                  </div>
+
+                  <strong>{p.title}</strong>
+                  <p>{p.pain}</p>
+                </button>
+              ))}
+            </div>
+
+            <aside style={details}>
+              <span style={badgeLarge}>{selected.category}</span>
+
+              <h2 style={detailTitle}>{selected.title}</h2>
+
+              <div style={detailBlock}>
+                <span>Problem</span>
+                <p>{selected.pain}</p>
+              </div>
+
+              <div style={detailBlock}>
+                <span>Website idea</span>
+                <p>{selected.website}</p>
+              </div>
+
+              <div style={detailBlock}>
+                <span>How it can make money</span>
+                <p>{selected.monetization}</p>
+              </div>
+
+              <Link
+                href={`/builder?idea=${encodeURIComponent(selected.prompt)}`}
+                style={generateBtn}
+              >
+                Generate website
+              </Link>
+            </aside>
+          </div>
+        </section>
       </section>
     </main>
   );
@@ -151,370 +246,364 @@ export default function Home() {
 
 const app: React.CSSProperties = {
   minHeight: "100vh",
-  background: "#09090b",
+  background: "#050509",
   color: "#fff",
   fontFamily: "Inter, system-ui, Arial",
   display: "grid",
-  gridTemplateColumns: "270px 1fr",
-  overflow: "hidden",
+  gridTemplateColumns: "290px 1fr",
 };
 
 const sidebar: React.CSSProperties = {
-  minHeight: "100vh",
-  background: "#08080a",
+  padding: 16,
   borderRight: "1px solid rgba(255,255,255,.08)",
-  padding: 14,
+  background: "rgba(5,5,9,.96)",
   display: "flex",
   flexDirection: "column",
-  gap: 14,
+  gap: 18,
 };
 
-const sidebarTop: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "4px 6px",
+const logoBox: React.CSSProperties = {
+  padding: 18,
+  borderRadius: 20,
+  border: "1px solid rgba(255,255,255,.1)",
+  background:
+    "linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02))",
+  color: "#fff",
+  textAlign: "left",
+  cursor: "pointer",
 };
 
-const brandMark: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: 8,
-  background: "linear-gradient(135deg,#fb7185,#8b5cf6,#22c55e)",
+const logo: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: 12,
+  background: "linear-gradient(135deg,#2563eb,#a855f7,#ec4899)",
   display: "grid",
   placeItems: "center",
   fontWeight: 950,
-  color: "#fff",
+  marginBottom: 14,
 };
 
-const collapseBtn: React.CSSProperties = {
-  border: "none",
-  background: "transparent",
+const sideTitle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 20,
+};
+
+const sideText: React.CSSProperties = {
   color: "#a1a1aa",
-  fontSize: 18,
+  lineHeight: 1.55,
+  margin: "8px 0 0",
 };
 
 const workspace: React.CSSProperties = {
-  height: 36,
-  borderRadius: 10,
-  background: "#1c1c1f",
-  border: "1px solid rgba(255,255,255,.08)",
   display: "flex",
   alignItems: "center",
   gap: 10,
-  padding: "0 10px",
-  fontSize: 14,
+  padding: 12,
+  borderRadius: 12,
+  background: "rgba(255,255,255,.06)",
+  border: "1px solid rgba(255,255,255,.08)",
+  color: "#fff",
+  textDecoration: "none",
 };
 
 const avatar: React.CSSProperties = {
-  width: 24,
-  height: 24,
-  borderRadius: 6,
-  background: "#6d28d9",
+  width: 32,
+  height: 32,
+  borderRadius: 10,
+  background: "linear-gradient(135deg,#2563eb,#ec4899)",
   display: "grid",
   placeItems: "center",
-  fontSize: 12,
   fontWeight: 900,
 };
 
-const sideNav: React.CSSProperties = {
+const nav: React.CSSProperties = {
   display: "grid",
-  gap: 6,
+  gap: 8,
 };
 
-const sideActive: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  background: "rgba(255,255,255,.16)",
+const navActive: React.CSSProperties = {
+  padding: "14px 16px",
+  borderRadius: 12,
+  background:
+    "linear-gradient(90deg,rgba(59,130,246,.18),rgba(168,85,247,.14))",
   color: "#fff",
-  textDecoration: "none",
-  fontWeight: 800,
-};
-
-const sideLink: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  color: "#e5e7eb",
-  textDecoration: "none",
-  fontWeight: 650,
-};
-
-const sideGroup: React.CSSProperties = {
-  marginTop: 12,
-  display: "grid",
-  gap: 10,
-};
-
-const sideLabel: React.CSSProperties = {
-  margin: "0 0 4px",
-  color: "#a1a1aa",
-  fontSize: 13,
-};
-
-const recentLink: React.CSSProperties = {
-  color: "#e5e7eb",
-  textDecoration: "none",
-  fontSize: 14,
-  padding: "2px 8px",
-};
-
-const upgradeCard: React.CSSProperties = {
-  marginTop: "auto",
-  padding: 14,
-  borderRadius: 14,
-  background: "#171717",
-  border: "1px solid rgba(255,255,255,.08)",
-};
-
-const upgradeText: React.CSSProperties = {
-  margin: "6px 0 0",
-  color: "#a1a1aa",
-  fontSize: 12,
-  lineHeight: 1.4,
-};
-
-const profileDot: React.CSSProperties = {
-  width: 30,
-  height: 30,
-  borderRadius: "50%",
-  background: "#0ea5e9",
-  display: "grid",
-  placeItems: "center",
   fontWeight: 900,
+  border: "1px solid rgba(255,255,255,.08)",
+  textAlign: "left",
+  cursor: "pointer",
+};
+
+const navButton: React.CSSProperties = {
+  padding: "14px 16px",
+  color: "#e5e7eb",
+  background: "transparent",
+  border: "none",
+  textAlign: "left",
+  fontWeight: 750,
+  cursor: "pointer",
+};
+
+const navLink: React.CSSProperties = {
+  padding: "14px 16px",
+  color: "#e5e7eb",
+  textDecoration: "none",
+  fontWeight: 750,
+};
+
+const upgrade: React.CSSProperties = {
+  marginTop: "auto",
+  padding: 18,
+  borderRadius: 18,
+  background:
+    "linear-gradient(135deg,rgba(37,99,235,.2),rgba(236,72,153,.2))",
+  border: "1px solid rgba(255,255,255,.12)",
 };
 
 const mainArea: React.CSSProperties = {
-  height: "100vh",
+  padding: 16,
   overflowY: "auto",
-  padding: 14,
 };
 
-const heroPanel: React.CSSProperties = {
+const hero: React.CSSProperties = {
   position: "relative",
-  minHeight: 650,
-  borderRadius: 18,
+  minHeight: 520,
+  borderRadius: 24,
   overflow: "hidden",
   display: "grid",
   placeItems: "center",
-  background:
-    "radial-gradient(circle at 50% 20%, rgba(31,41,55,.95), rgba(17,24,39,.7) 24%, transparent 42%), linear-gradient(135deg,#111827 0%,#2563eb 38%,#f472b6 68%,#fb2f3a 100%)",
-};
-
-const heroGlow: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background:
-    "radial-gradient(circle at center, rgba(255,255,255,.12), transparent 32%)",
-  pointerEvents: "none",
-};
-
-const topPill: React.CSSProperties = {
-  position: "absolute",
-  top: "36%",
-  transform: "translateY(-90px)",
-  padding: "10px 16px",
-  borderRadius: 999,
-  background: "rgba(15,23,42,.78)",
-  border: "1px solid rgba(255,255,255,.12)",
-  boxShadow: "0 18px 60px rgba(0,0,0,.25)",
-  fontWeight: 850,
-  fontSize: 14,
-  zIndex: 2,
-};
-
-const heroTitle: React.CSSProperties = {
-  position: "absolute",
-  top: "36%",
-  transform: "translateY(-25px)",
-  fontSize: 34,
-  margin: 0,
-  zIndex: 2,
   textAlign: "center",
+  background:
+    "radial-gradient(circle at 25% 55%, rgba(37,99,235,.75), transparent 32%), radial-gradient(circle at 75% 35%, rgba(236,72,153,.75), transparent 34%), linear-gradient(135deg,#06111f,#111827 35%,#831843 100%)",
+};
+
+const glowBlue: React.CSSProperties = {
+  position: "absolute",
+  width: 500,
+  height: 500,
+  left: 140,
+  top: 220,
+  background: "#2563eb",
+  filter: "blur(120px)",
+  opacity: 0.55,
+};
+
+const glowPink: React.CSSProperties = {
+  position: "absolute",
+  width: 520,
+  height: 520,
+  right: 100,
+  top: 120,
+  background: "#ec4899",
+  filter: "blur(120px)",
+  opacity: 0.6,
+};
+
+const pill: React.CSSProperties = {
+  position: "relative",
+  zIndex: 2,
+  padding: "12px 18px",
+  borderRadius: 999,
+  background: "rgba(8,13,30,.7)",
+  border: "1px solid rgba(255,255,255,.14)",
+  fontWeight: 900,
+};
+
+const title: React.CSSProperties = {
+  position: "relative",
+  zIndex: 2,
+  fontSize: 58,
+  lineHeight: 1.05,
+  margin: "18px 0 0",
+};
+
+const titleGradient: React.CSSProperties = {
+  background: "linear-gradient(90deg,#60a5fa,#c084fc,#f472b6)",
+  WebkitBackgroundClip: "text",
+  color: "transparent",
+};
+
+const subtitle: React.CSSProperties = {
+  position: "relative",
+  zIndex: 2,
+  color: "#d4d4d8",
+  fontSize: 18,
+  maxWidth: 760,
+  lineHeight: 1.6,
 };
 
 const promptBox: React.CSSProperties = {
   position: "relative",
-  width: "min(700px, 90%)",
-  minHeight: 112,
-  marginTop: 60,
-  borderRadius: 30,
-  background: "#272723",
-  border: "2px solid rgba(0,0,0,.65)",
-  boxShadow: "0 35px 100px rgba(0,0,0,.35)",
-  padding: 18,
   zIndex: 3,
+  width: "min(780px, 82%)",
+  borderRadius: 28,
+  padding: 18,
+  background: "rgba(10,10,16,.72)",
+  border: "1px solid rgba(96,165,250,.8)",
+  boxShadow:
+    "0 0 0 1px rgba(236,72,153,.45), 0 35px 120px rgba(0,0,0,.45)",
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  gap: 12,
 };
 
 const promptInput: React.CSSProperties = {
-  width: "100%",
-  height: 48,
-  resize: "none",
   border: "none",
   outline: "none",
   background: "transparent",
-  color: "#f4f4f5",
+  color: "#fff",
   fontSize: 18,
-  fontFamily: "inherit",
 };
 
-const promptBottom: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-};
-
-const plusBtn: React.CSSProperties = {
-  width: 34,
-  height: 34,
+const generateSmall: React.CSSProperties = {
+  padding: "12px 18px",
   borderRadius: 999,
-  color: "#d4d4d8",
+  background: "linear-gradient(90deg,#2563eb,#ec4899)",
+  color: "#fff",
   textDecoration: "none",
-  display: "grid",
-  placeItems: "center",
-  fontSize: 26,
+  fontWeight: 900,
 };
 
-const promptActions: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 14,
-};
-
-const buildMode: React.CSSProperties = {
-  color: "#e4e4e7",
-  fontWeight: 700,
-};
-
-const sendBtn: React.CSSProperties = {
-  width: 38,
-  height: 38,
-  borderRadius: "50%",
-  background: "#a1a1aa",
-  color: "#18181b",
-  display: "grid",
-  placeItems: "center",
-  textDecoration: "none",
-  fontWeight: 950,
-};
-
-const floatingStats: React.CSSProperties = {
-  position: "absolute",
-  bottom: 36,
-  display: "flex",
-  gap: 12,
-  zIndex: 4,
-};
-
-const statCard: React.CSSProperties = {
-  minWidth: 120,
-  padding: 14,
-  borderRadius: 18,
-  background: "rgba(8,8,10,.42)",
-  border: "1px solid rgba(255,255,255,.12)",
-  backdropFilter: "blur(14px)",
-  display: "grid",
-  gap: 3,
-  textAlign: "center",
-};
-
-const projectsPanel: React.CSSProperties = {
-  margin: "-70px auto 0",
+const panel: React.CSSProperties = {
+  width: "min(1180px, 94%)",
+  margin: "60px auto 60px",
   position: "relative",
   zIndex: 5,
-  width: "min(1160px, 92%)",
-  padding: 32,
-  borderRadius: 26,
-  background: "rgba(20,10,14,.92)",
-  border: "1px solid rgba(255,255,255,.08)",
-  boxShadow: "0 -20px 100px rgba(0,0,0,.25)",
+  padding: 28,
+  borderRadius: 28,
+  background: "rgba(8,8,14,.82)",
+  border: "1px solid rgba(255,255,255,.12)",
+  boxShadow: "0 -30px 100px rgba(0,0,0,.35)",
+  backdropFilter: "blur(18px)",
 };
 
-const tabs: React.CSSProperties = {
+const panelHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 20,
+  alignItems: "center",
+};
+
+const muted: React.CSSProperties = {
+  color: "#a1a1aa",
+  marginBottom: 0,
+};
+
+const search: React.CSSProperties = {
+  width: 320,
+  padding: "14px 16px",
+  borderRadius: 16,
+  border: "1px solid rgba(255,255,255,.12)",
+  background: "rgba(255,255,255,.05)",
+  color: "#fff",
+  outline: "none",
+};
+
+const filters: React.CSSProperties = {
   display: "flex",
   gap: 10,
-  alignItems: "center",
   flexWrap: "wrap",
+  marginTop: 22,
 };
 
-const tabActive: React.CSSProperties = {
-  padding: "10px 16px",
+const filterBtn: React.CSSProperties = {
+  padding: "10px 13px",
   borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.12)",
-  background: "rgba(255,255,255,.16)",
+  border: "1px solid rgba(255,255,255,.1)",
+  background: "rgba(255,255,255,.04)",
+  color: "#d4d4d8",
+  cursor: "pointer",
+};
+
+const filterActive: React.CSSProperties = {
+  ...filterBtn,
+  background: "rgba(236,72,153,.16)",
   color: "#fff",
-  fontWeight: 800,
 };
 
-const tab: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 999,
-  border: "none",
-  background: "transparent",
-  color: "#a1a1aa",
-  fontWeight: 800,
-};
-
-const browseAll: React.CSSProperties = {
-  marginLeft: "auto",
-  color: "#fff",
-  textDecoration: "none",
-  fontWeight: 800,
-};
-
-const cardGrid: React.CSSProperties = {
+const contentGrid: React.CSSProperties = {
   marginTop: 24,
   display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: 20,
+  gridTemplateColumns: "1.35fr .8fr",
+  gap: 22,
 };
 
-const projectCard: React.CSSProperties = {
-  overflow: "hidden",
-  borderRadius: 18,
-  background: "rgba(255,255,255,.06)",
-  border: "1px solid rgba(255,255,255,.08)",
-  textDecoration: "none",
-  color: "#fff",
-};
-
-const cardPreview = (index: number): React.CSSProperties => ({
-  height: 160,
-  padding: 18,
-  background:
-    index === 0
-      ? "linear-gradient(135deg,#0f172a,#2563eb)"
-      : index === 1
-      ? "linear-gradient(135deg,#111827,#22c55e)"
-      : "linear-gradient(135deg,#18181b,#f97316)",
-});
-
-const miniBar: React.CSSProperties = {
-  width: "100%",
-  height: 18,
-  borderRadius: 999,
-  background: "rgba(255,255,255,.22)",
-  marginBottom: 20,
-};
-
-const miniHero: React.CSSProperties = {
-  width: "72%",
-  height: 42,
-  borderRadius: 14,
-  background: "rgba(255,255,255,.28)",
-  marginBottom: 14,
-};
-
-const miniLine: React.CSSProperties = {
-  width: "82%",
-  height: 10,
-  borderRadius: 999,
-  background: "rgba(255,255,255,.22)",
-  marginTop: 8,
-};
-
-const cardBody: React.CSSProperties = {
-  padding: 18,
+const ideaList: React.CSSProperties = {
   display: "grid",
-  gap: 8,
-  color: "#d4d4d8",
+  gridTemplateColumns: "repeat(2,minmax(0,1fr))",
+  gap: 14,
+  maxHeight: 620,
+  overflowY: "auto",
+  paddingRight: 4,
+};
+
+const ideaCard: React.CSSProperties = {
+  padding: 16,
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,.08)",
+  background: "rgba(255,255,255,.04)",
+  color: "#fff",
+  textAlign: "left",
+  cursor: "pointer",
+};
+
+const ideaActive: React.CSSProperties = {
+  ...ideaCard,
+  border: "1px solid rgba(236,72,153,.45)",
+  background: "rgba(236,72,153,.11)",
+};
+
+const ideaTop: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  marginBottom: 10,
+};
+
+const badge: React.CSSProperties = {
+  fontSize: 11,
+  color: "#f9a8d4",
+  fontWeight: 900,
+};
+
+const ideaId: React.CSSProperties = {
+  color: "#71717a",
+  fontSize: 11,
+};
+
+const details: React.CSSProperties = {
+  position: "sticky",
+  top: 20,
+  alignSelf: "start",
+  padding: 22,
+  borderRadius: 24,
+  border: "1px solid rgba(255,255,255,.12)",
+  background:
+    "linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035))",
+};
+
+const badgeLarge: React.CSSProperties = {
+  color: "#f9a8d4",
+  fontWeight: 900,
+  fontSize: 13,
+};
+
+const detailTitle: React.CSSProperties = {
+  fontSize: 32,
+  lineHeight: 1.05,
+};
+
+const detailBlock: React.CSSProperties = {
+  marginTop: 18,
+};
+
+const generateBtn: React.CSSProperties = {
+  marginTop: 24,
+  display: "block",
+  textAlign: "center",
+  padding: 15,
+  borderRadius: 999,
+  background: "linear-gradient(90deg,#2563eb,#a855f7,#ec4899)",
+  color: "#fff",
+  textDecoration: "none",
+  fontWeight: 950,
 };
