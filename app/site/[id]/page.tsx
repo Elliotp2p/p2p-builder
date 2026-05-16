@@ -32,7 +32,7 @@ export default async function SiteHome({
   const { data, error } = await supabase
     .from("sites")
     .select("html, html_files")
-    .eq("id", id)
+    .or(`id.eq.${id},slug.eq.${id}`)
     .single();
 
   if (error || !data) {
