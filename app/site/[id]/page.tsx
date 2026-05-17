@@ -41,16 +41,15 @@ export default async function SiteHome({
 
   const html = data.html_files?.["index.html"] || data.html || "";
 
-  return (
-    <iframe
-      srcDoc={html}
-      style={{
-        width: "100vw",
-        height: "100vh",
-        border: "none",
-        display: "block",
-      }}
-      sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
-    />
-  );
+  <iframe
+  srcDoc={html}
+  style={{
+    width: "100vw",
+    height: "100vh",
+    border: "none",
+    display: "block",
+  }}
+  sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation allow-top-navigation-by-user-activation"
+/>
+  
 }

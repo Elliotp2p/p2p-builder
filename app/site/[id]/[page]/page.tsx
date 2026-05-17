@@ -54,14 +54,14 @@ const safePage = ["pricing", "about", "contact"].includes(page)
 
   return (
     <iframe
-      srcDoc={html}
-      style={{
-        width: "100vw",
-        height: "100vh",
-        border: "none",
-        display: "block",
-      }}
-      sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
-    />
+  srcDoc={html}
+  style={{
+    width: "100vw",
+    height: "100vh",
+    border: "none",
+    display: "block",
+  }}
+  sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation allow-top-navigation-by-user-activation"
+/>
   );
 }
