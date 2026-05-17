@@ -22,7 +22,7 @@ const supabase = createClient(
   }
 );
 
-export default async function SiteHome({
+export default async function SitePage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -31,7 +31,7 @@ export default async function SiteHome({
 
   const { data, error } = await supabase
     .from("sites")
-    .select("html, html_files")
+    .select("*")
     .or(`id.eq.${id},slug.eq.${id}`)
     .single();
 
@@ -39,17 +39,41 @@ export default async function SiteHome({
     notFound();
   }
 
-  const html = data.html_files?.["index.html"] || data.html || "";
+  let html =
+    data.html_files?.["index.html"] ||
+    data.html ||
+    "";
 
-  <iframe
-  srcDoc={html}
-  style={{
-    width: "100vw",
-    height: "100vh",
-    border: "none",
-    display: "block",
-  }}
-  sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation allow-top-navigation-by-user-activation"
-/>
-  
+  if (!html) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#000",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "Arial",
+        }}
+      >
+        No HTML found in database
+      </div>
+    );
+  }
+
+  html = html.replaceAll("REPLACE_ID", data.slug || data.id);
+
+  return (
+    <iframe
+      srcDoc={html}
+      style={{
+        width: "100vw",
+        height: "100vh",
+        border: "none",
+        background: "#fff",
+      }}
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+    />
+  );
 }
