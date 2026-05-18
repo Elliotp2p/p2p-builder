@@ -1,14 +1,31 @@
 import { createClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 function env(name: string) {
   const value = process.env[name];
+  if (!value) throw new Error(`Missing env var: ${name}`);
+  return value.replace(/\s+/g, "");
+}
 
-  if (!value) {
-    throw new Error(`Missing env var: ${name}`);
+function normalizeHtml(html: string, siteKey: string) {
+  let output = String(html || "");
+
+  output = output.replaceAll("REPLACE_ID", siteKey);
+
+  output = output.replace(
+    /href=(["'])\/site\/REPLACE_ID(.*?)\1/g,
+    `href="/site/${siteKey}$2"`
+  );
+
+  output = output.replaceAll("source.unsplash.com", "images.unsplash.com");
+
+  if (!output.toLowerCase().includes("<!doctype html")) {
+    output = `<!doctype html>${output}`;
   }
 
-  return value.replace(/\s+/g, "");
+  return output;
 }
 
 const supabase = createClient(
@@ -31,49 +48,65 @@ export default async function SitePage({
 
   const { data, error } = await supabase
     .from("sites")
-    .select("*")
+    .select("id, slug, html, html_files, name")
     .or(`id.eq.${id},slug.eq.${id}`)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
-    notFound();
-  }
+  if (error || !data) notFound();
 
-  let html =
+  const siteKey = data.slug || data.id;
+
+  const rawHtml =
     data.html_files?.["index.html"] ||
     data.html ||
     "";
 
-  if (!html) {
+  if (!rawHtml) {
     return (
-      <div
+      <main
         style={{
           minHeight: "100vh",
-          background: "#000",
+          background: "#050509",
           color: "#fff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "Arial",
+          display: "grid",
+          placeItems: "center",
+          fontFamily: "Inter, Arial",
+          padding: 32,
         }}
       >
-        No HTML found in database
-      </div>
+        <div
+          style={{
+            maxWidth: 620,
+            padding: 32,
+            borderRadius: 24,
+            background: "rgba(255,255,255,.06)",
+            border: "1px solid rgba(255,255,255,.1)",
+          }}
+        >
+          <h1 style={{ marginTop: 0 }}>No HTML found</h1>
+          <p style={{ color: "#a1a1aa", lineHeight: 1.6 }}>
+            This site exists in Supabase, but no homepage HTML was saved.
+            Try publishing again from the builder.
+          </p>
+        </div>
+      </main>
     );
   }
 
-  html = html.replaceAll("REPLACE_ID", data.slug || data.id);
+  const html = normalizeHtml(rawHtml, siteKey);
 
   return (
     <iframe
+      title={data.name || "Published site"}
       srcDoc={html}
       style={{
         width: "100vw",
         height: "100vh",
         border: "none",
+        display: "block",
         background: "#fff",
       }}
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-top-navigation-by-user-activation"
     />
   );
 }
