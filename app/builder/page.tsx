@@ -625,27 +625,52 @@ export default function BuilderPage() {
   }, [supabase]);
 
   useEffect(() => {
-    const loadUser = async () => {
+  let alive = true;
+
+  const loadUser = async () => {
+    try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
+      if (!alive) return;
+
       setUserEmail(session?.user?.email || "");
+    } catch (error: any) {
+      console.error("Auth load error:", error);
+      if (alive) {
+        setLoginStatus(error?.message || "Could not load session");
+        setUserEmail("");
+      }
+    } finally {
+      if (alive) {
+        setCheckingAuth(false);
+      }
+    }
+  };
+
+  loadUser();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!alive) return;
+    setUserEmail(session?.user?.email || "");
+    setCheckingAuth(false);
+  });
+
+  const safetyTimeout = setTimeout(() => {
+    if (alive) {
       setCheckingAuth(false);
-    };
+    }
+  }, 3500);
 
-    loadUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email || "");
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [supabase]);
+  return () => {
+    alive = false;
+    clearTimeout(safetyTimeout);
+    subscription.unsubscribe();
+  };
+}, [supabase]);
 
   useEffect(() => {
     const saved = localStorage.getItem("p2p-builder-autosave");
