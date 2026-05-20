@@ -51,30 +51,30 @@ const problems = Array.from({ length: 120 }).map((_, i) => {
     title,
     category,
     market: niche,
-    pain: `${niche} often waste time on repetitive tasks, missed leads, manual messages, bookings and follow-ups.`,
+    pain: `${niche} waste time on repetitive tasks, missed leads, manual messages, bookings and follow-ups.`,
     website: `A premium website selling a simple product that helps ${niche} save time, get more customers and manage work faster.`,
     monetization:
       i % 3 === 0
         ? "Monthly subscription"
         : i % 3 === 1
         ? "Lead generation fees"
-        : "One-time setup plus monthly support",
+        : "Setup fee plus monthly support",
     prompt: `Build a premium ${category} startup website for: ${title}. The website should explain the problem, show the product, include trust sections, pricing, contact form and a strong CTA.`,
   };
 });
 
 export default function Home() {
-  const [activeView, setActiveView] = useState("ideas");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
   const [customIdea, setCustomIdea] = useState("");
   const [selected, setSelected] = useState(problems[0]);
+  const [showAll, setShowAll] = useState(false);
 
   const filteredProblems = useMemo(() => {
     return problems.filter((p) => {
       const matchesFilter = filter === "All" || p.category === filter;
-
       const q = query.toLowerCase();
+
       const matchesSearch =
         p.title.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
@@ -85,6 +85,10 @@ export default function Home() {
     });
   }, [query, filter]);
 
+  const visibleProblems = showAll
+    ? filteredProblems
+    : filteredProblems.slice(0, 18);
+
   const customHref = customIdea.trim()
     ? `/builder?idea=${encodeURIComponent(customIdea.trim())}`
     : "/builder";
@@ -92,89 +96,94 @@ export default function Home() {
   return (
     <main style={app}>
       <aside style={sidebar}>
-        <button onClick={() => setActiveView("ideas")} style={logoBox}>
+        <Link href="/" style={brandBlock}>
           <div style={logo}>P</div>
-          <h2 style={sideTitle}>Problem to Profit</h2>
-          <p style={sideText}>Find problems. Build websites. Launch fast.</p>
-        </button>
-
-        <Link href="/builder" style={workspace}>
-          <div style={avatar}>E</div>
-          <span>Elliot&apos;s P2P</span>
-          <span style={{ marginLeft: "auto" }}>Builder</span>
+          <div>
+            <strong>Problem to Profit</strong>
+            <p style={mutedSmall}>AI website workspace</p>
+          </div>
         </Link>
 
         <nav style={nav}>
-          <button
-            onClick={() => setActiveView("ideas")}
-            style={activeView === "ideas" ? navActive : navButton}
-          >
-            Problem ideas
-          </button>
-
-          <button
-            onClick={() => setActiveView("custom")}
-            style={activeView === "custom" ? navActive : navButton}
-          >
-            Build custom idea
-          </button>
-
-          <Link href="/builder" style={navLink}>
-            Builder
-          </Link>
+          <a href="#workspace" style={navActive}>Workspace</a>
+          <a href="#ideas" style={navLink}>Ideas</a>
+          <Link href="/builder" style={navLink}>Builder</Link>
         </nav>
 
-        <div style={upgrade}>
-          <strong>Opportunity engine</strong>
-          <p style={sideText}>
-            Browse startup problems and generate a website from any idea.
+        <div style={sideCard}>
+          <span style={miniBadge}>Status</span>
+          <h3 style={{ margin: "10px 0 6px" }}>Ready to build</h3>
+          <p style={muted}>
+            Start from a prompt or choose a validated problem idea.
           </p>
         </div>
       </aside>
 
       <section style={mainArea}>
-        <section style={hero}>
-          <div style={glowBlue} />
-          <div style={glowPink} />
+        <header style={topbar}>
+          <div>
+            <p style={eyebrow}>Problem to Profit AI</p>
+            <h1 style={title}>
+              A clean workspace for turning ideas into websites.
+            </h1>
+          </div>
 
-          <div style={pill}>AI startup problem finder</div>
+          <Link href="/builder" style={topCta}>
+            Open Builder
+          </Link>
+        </header>
 
-          <h1 style={title}>
-            Find a problem. <span style={titleGradient}>Build the website.</span>
-          </h1>
+        <section id="workspace" style={workspaceGrid}>
+          <div style={promptPanel}>
+            <span style={miniBadge}>Start from scratch</span>
+            <h2 style={panelTitle}>Describe what you want to build</h2>
+            <p style={muted}>
+              Write one sentence. The AI chooses the layout, style, sections,
+              images and conversion flow.
+            </p>
 
-          <p style={subtitle}>
-            Browse 100+ curated problems inspired by real online complaints,
-            business gaps and startup opportunities.
-          </p>
-
-          <div style={promptBox}>
-            <input
+            <textarea
               value={customIdea}
               onChange={(e) => setCustomIdea(e.target.value)}
-              placeholder="Or write your own website idea..."
+              placeholder="Ex: Luxury Nordic travel website for Gothenburg with cinematic harbor photography"
               style={promptInput}
             />
 
-            <Link href={customHref} style={generateSmall}>
+            <Link href={customHref} style={primaryButton}>
               Generate website
             </Link>
           </div>
+
+          <div style={statsPanel}>
+            <div style={statCard}>
+              <strong>120+</strong>
+              <span>Problem ideas</span>
+            </div>
+            <div style={statCard}>
+              <strong>4</strong>
+              <span>Core pages</span>
+            </div>
+            <div style={statCard}>
+              <strong>AI</strong>
+              <span>Design engine</span>
+            </div>
+          </div>
         </section>
 
-        <section style={panel}>
+        <section id="ideas" style={ideasPanel}>
           <div style={panelHeader}>
             <div>
-              <h2 style={{ margin: 0 }}>Problem opportunities</h2>
+              <span style={miniBadge}>Opportunity library</span>
+              <h2 style={{ margin: "10px 0 4px" }}>Browse startup ideas</h2>
               <p style={muted}>
-                Select a problem to see what the website should sell.
+                Pick a problem. Preview the business angle. Generate the site.
               </p>
             </div>
 
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search problems..."
+              placeholder="Search ideas..."
               style={search}
             />
           </div>
@@ -193,7 +202,7 @@ export default function Home() {
 
           <div style={contentGrid}>
             <div style={ideaList}>
-              {filteredProblems.map((p) => (
+              {visibleProblems.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => setSelected(p)}
@@ -208,11 +217,16 @@ export default function Home() {
                   <p>{p.pain}</p>
                 </button>
               ))}
+
+              {!showAll && filteredProblems.length > 18 && (
+                <button onClick={() => setShowAll(true)} style={showMore}>
+                  Show all {filteredProblems.length} ideas
+                </button>
+              )}
             </div>
 
             <aside style={details}>
               <span style={badgeLarge}>{selected.category}</span>
-
               <h2 style={detailTitle}>{selected.title}</h2>
 
               <div style={detailBlock}>
@@ -221,20 +235,20 @@ export default function Home() {
               </div>
 
               <div style={detailBlock}>
-                <span>Website idea</span>
+                <span>Website angle</span>
                 <p>{selected.website}</p>
               </div>
 
               <div style={detailBlock}>
-                <span>How it can make money</span>
+                <span>Monetization</span>
                 <p>{selected.monetization}</p>
               </div>
 
               <Link
                 href={`/builder?idea=${encodeURIComponent(selected.prompt)}`}
-                style={generateBtn}
+                style={primaryButton}
               >
-                Generate website
+                Build this website
               </Link>
             </aside>
           </div>
@@ -246,235 +260,174 @@ export default function Home() {
 
 const app: React.CSSProperties = {
   minHeight: "100vh",
-  background: "#050509",
+  background: "#08080c",
   color: "#fff",
   fontFamily: "Inter, system-ui, Arial",
   display: "grid",
-  gridTemplateColumns: "290px 1fr",
+  gridTemplateColumns: "280px 1fr",
 };
 
 const sidebar: React.CSSProperties = {
-  padding: 16,
+  padding: 18,
   borderRight: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(5,5,9,.96)",
+  background: "#06060a",
   display: "flex",
   flexDirection: "column",
-  gap: 18,
+  gap: 22,
 };
 
-const logoBox: React.CSSProperties = {
-  padding: 18,
-  borderRadius: 20,
-  border: "1px solid rgba(255,255,255,.1)",
-  background:
-    "linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02))",
+const brandBlock: React.CSSProperties = {
+  display: "flex",
+  gap: 12,
+  alignItems: "center",
   color: "#fff",
-  textAlign: "left",
-  cursor: "pointer",
+  textDecoration: "none",
 };
 
 const logo: React.CSSProperties = {
   width: 42,
   height: 42,
-  borderRadius: 12,
-  background: "linear-gradient(135deg,#2563eb,#a855f7,#ec4899)",
+  borderRadius: 14,
+  background: "linear-gradient(135deg,#6366f1,#a855f7,#ec4899)",
   display: "grid",
   placeItems: "center",
   fontWeight: 950,
-  marginBottom: 14,
-};
-
-const sideTitle: React.CSSProperties = {
-  margin: 0,
-  fontSize: 20,
-};
-
-const sideText: React.CSSProperties = {
-  color: "#a1a1aa",
-  lineHeight: 1.55,
-  margin: "8px 0 0",
-};
-
-const workspace: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  padding: 12,
-  borderRadius: 12,
-  background: "rgba(255,255,255,.06)",
-  border: "1px solid rgba(255,255,255,.08)",
-  color: "#fff",
-  textDecoration: "none",
-};
-
-const avatar: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  borderRadius: 10,
-  background: "linear-gradient(135deg,#2563eb,#ec4899)",
-  display: "grid",
-  placeItems: "center",
-  fontWeight: 900,
 };
 
 const nav: React.CSSProperties = {
   display: "grid",
-  gap: 8,
-};
-
-const navActive: React.CSSProperties = {
-  padding: "14px 16px",
-  borderRadius: 12,
-  background:
-    "linear-gradient(90deg,rgba(59,130,246,.18),rgba(168,85,247,.14))",
-  color: "#fff",
-  fontWeight: 900,
-  border: "1px solid rgba(255,255,255,.08)",
-  textAlign: "left",
-  cursor: "pointer",
-};
-
-const navButton: React.CSSProperties = {
-  padding: "14px 16px",
-  color: "#e5e7eb",
-  background: "transparent",
-  border: "none",
-  textAlign: "left",
-  fontWeight: 750,
-  cursor: "pointer",
+  gap: 6,
 };
 
 const navLink: React.CSSProperties = {
-  padding: "14px 16px",
-  color: "#e5e7eb",
+  padding: "12px 14px",
+  color: "#a1a1aa",
   textDecoration: "none",
   fontWeight: 750,
+  borderRadius: 12,
 };
 
-const upgrade: React.CSSProperties = {
+const navActive: React.CSSProperties = {
+  ...navLink,
+  color: "#fff",
+  background: "rgba(255,255,255,.07)",
+};
+
+const sideCard: React.CSSProperties = {
   marginTop: "auto",
   padding: 18,
-  borderRadius: 18,
-  background:
-    "linear-gradient(135deg,rgba(37,99,235,.2),rgba(236,72,153,.2))",
-  border: "1px solid rgba(255,255,255,.12)",
+  borderRadius: 20,
+  background: "rgba(255,255,255,.045)",
+  border: "1px solid rgba(255,255,255,.08)",
 };
 
 const mainArea: React.CSSProperties = {
-  padding: 16,
+  padding: 26,
   overflowY: "auto",
 };
 
-const hero: React.CSSProperties = {
-  position: "relative",
-  minHeight: 520,
-  borderRadius: 24,
-  overflow: "hidden",
-  display: "grid",
-  placeItems: "center",
-  textAlign: "center",
-  background:
-    "radial-gradient(circle at 25% 55%, rgba(37,99,235,.75), transparent 32%), radial-gradient(circle at 75% 35%, rgba(236,72,153,.75), transparent 34%), linear-gradient(135deg,#06111f,#111827 35%,#831843 100%)",
+const topbar: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 24,
+  marginBottom: 24,
 };
 
-const glowBlue: React.CSSProperties = {
-  position: "absolute",
-  width: 500,
-  height: 500,
-  left: 140,
-  top: 220,
-  background: "#2563eb",
-  filter: "blur(120px)",
-  opacity: 0.55,
-};
-
-const glowPink: React.CSSProperties = {
-  position: "absolute",
-  width: 520,
-  height: 520,
-  right: 100,
-  top: 120,
-  background: "#ec4899",
-  filter: "blur(120px)",
-  opacity: 0.6,
-};
-
-const pill: React.CSSProperties = {
-  position: "relative",
-  zIndex: 2,
-  padding: "12px 18px",
-  borderRadius: 999,
-  background: "rgba(8,13,30,.7)",
-  border: "1px solid rgba(255,255,255,.14)",
+const eyebrow: React.CSSProperties = {
+  margin: 0,
+  color: "#c4b5fd",
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: 1.4,
   fontWeight: 900,
 };
 
 const title: React.CSSProperties = {
-  position: "relative",
-  zIndex: 2,
   fontSize: 58,
-  lineHeight: 1.05,
-  margin: "18px 0 0",
-};
-
-const titleGradient: React.CSSProperties = {
-  background: "linear-gradient(90deg,#60a5fa,#c084fc,#f472b6)",
-  WebkitBackgroundClip: "text",
-  color: "transparent",
-};
-
-const subtitle: React.CSSProperties = {
-  position: "relative",
-  zIndex: 2,
-  color: "#d4d4d8",
-  fontSize: 18,
+  lineHeight: 0.95,
+  letterSpacing: "-.07em",
   maxWidth: 760,
-  lineHeight: 1.6,
+  margin: "10px 0 0",
 };
 
-const promptBox: React.CSSProperties = {
-  position: "relative",
-  zIndex: 3,
-  width: "min(780px, 82%)",
-  borderRadius: 28,
-  padding: 18,
-  background: "rgba(10,10,16,.72)",
-  border: "1px solid rgba(96,165,250,.8)",
-  boxShadow:
-    "0 0 0 1px rgba(236,72,153,.45), 0 35px 120px rgba(0,0,0,.45)",
+const topCta: React.CSSProperties = {
+  padding: "12px 18px",
+  borderRadius: 999,
+  background: "#fff",
+  color: "#09090b",
+  textDecoration: "none",
+  fontWeight: 900,
+};
+
+const workspaceGrid: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr auto",
-  gap: 12,
+  gridTemplateColumns: "1.4fr .8fr",
+  gap: 18,
+  marginBottom: 22,
+};
+
+const promptPanel: React.CSSProperties = {
+  padding: 28,
+  borderRadius: 28,
+  background:
+    "linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.035))",
+  border: "1px solid rgba(255,255,255,.09)",
+  boxShadow: "0 30px 100px rgba(0,0,0,.32)",
+};
+
+const panelTitle: React.CSSProperties = {
+  fontSize: 34,
+  lineHeight: 1.05,
+  letterSpacing: "-.04em",
+  margin: "12px 0 8px",
 };
 
 const promptInput: React.CSSProperties = {
-  border: "none",
-  outline: "none",
-  background: "transparent",
+  width: "100%",
+  height: 116,
+  marginTop: 18,
+  padding: 16,
+  borderRadius: 20,
+  border: "1px solid rgba(167,139,250,.28)",
+  background: "rgba(0,0,0,.28)",
   color: "#fff",
-  fontSize: 18,
+  outline: "none",
+  resize: "none",
+  fontSize: 15,
+  lineHeight: 1.6,
+  boxSizing: "border-box",
 };
 
-const generateSmall: React.CSSProperties = {
-  padding: "12px 18px",
+const primaryButton: React.CSSProperties = {
+  marginTop: 16,
+  display: "inline-flex",
+  justifyContent: "center",
+  padding: "13px 18px",
   borderRadius: 999,
-  background: "linear-gradient(90deg,#2563eb,#ec4899)",
+  background: "linear-gradient(90deg,#6366f1,#a855f7,#ec4899)",
   color: "#fff",
   textDecoration: "none",
   fontWeight: 900,
 };
 
-const panel: React.CSSProperties = {
-  width: "min(1180px, 94%)",
-  margin: "60px auto 60px",
-  position: "relative",
-  zIndex: 5,
-  padding: 28,
+const statsPanel: React.CSSProperties = {
+  display: "grid",
+  gap: 14,
+};
+
+const statCard: React.CSSProperties = {
+  padding: 24,
+  borderRadius: 24,
+  background: "rgba(255,255,255,.045)",
+  border: "1px solid rgba(255,255,255,.08)",
+};
+
+const ideasPanel: React.CSSProperties = {
+  padding: 24,
   borderRadius: 28,
-  background: "rgba(8,8,14,.82)",
-  border: "1px solid rgba(255,255,255,.12)",
-  boxShadow: "0 -30px 100px rgba(0,0,0,.35)",
-  backdropFilter: "blur(18px)",
+  background: "rgba(255,255,255,.035)",
+  border: "1px solid rgba(255,255,255,.08)",
 };
 
 const panelHeader: React.CSSProperties = {
@@ -484,64 +437,58 @@ const panelHeader: React.CSSProperties = {
   alignItems: "center",
 };
 
-const muted: React.CSSProperties = {
-  color: "#a1a1aa",
-  marginBottom: 0,
-};
-
 const search: React.CSSProperties = {
-  width: 320,
-  padding: "14px 16px",
-  borderRadius: 16,
-  border: "1px solid rgba(255,255,255,.12)",
-  background: "rgba(255,255,255,.05)",
+  width: 300,
+  padding: "13px 15px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,.1)",
+  background: "rgba(255,255,255,.045)",
   color: "#fff",
   outline: "none",
 };
 
 const filters: React.CSSProperties = {
   display: "flex",
-  gap: 10,
+  gap: 8,
   flexWrap: "wrap",
-  marginTop: 22,
+  marginTop: 20,
 };
 
 const filterBtn: React.CSSProperties = {
-  padding: "10px 13px",
+  padding: "9px 12px",
   borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.1)",
-  background: "rgba(255,255,255,.04)",
-  color: "#d4d4d8",
+  border: "1px solid rgba(255,255,255,.09)",
+  background: "rgba(255,255,255,.035)",
+  color: "#a1a1aa",
   cursor: "pointer",
 };
 
 const filterActive: React.CSSProperties = {
   ...filterBtn,
-  background: "rgba(236,72,153,.16)",
+  background: "rgba(167,139,250,.16)",
   color: "#fff",
 };
 
 const contentGrid: React.CSSProperties = {
-  marginTop: 24,
+  marginTop: 22,
   display: "grid",
-  gridTemplateColumns: "1.35fr .8fr",
-  gap: 22,
+  gridTemplateColumns: "1.35fr .82fr",
+  gap: 20,
 };
 
 const ideaList: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2,minmax(0,1fr))",
-  gap: 14,
+  gap: 12,
   maxHeight: 620,
   overflowY: "auto",
-  paddingRight: 4,
 };
 
 const ideaCard: React.CSSProperties = {
   padding: 16,
   borderRadius: 18,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.04)",
+  border: "1px solid rgba(255,255,255,.07)",
+  background: "rgba(255,255,255,.035)",
   color: "#fff",
   textAlign: "left",
   cursor: "pointer",
@@ -549,8 +496,8 @@ const ideaCard: React.CSSProperties = {
 
 const ideaActive: React.CSSProperties = {
   ...ideaCard,
-  border: "1px solid rgba(236,72,153,.45)",
-  background: "rgba(236,72,153,.11)",
+  border: "1px solid rgba(167,139,250,.45)",
+  background: "rgba(167,139,250,.1)",
 };
 
 const ideaTop: React.CSSProperties = {
@@ -561,7 +508,7 @@ const ideaTop: React.CSSProperties = {
 
 const badge: React.CSSProperties = {
   fontSize: 11,
-  color: "#f9a8d4",
+  color: "#c4b5fd",
   fontWeight: 900,
 };
 
@@ -576,13 +523,13 @@ const details: React.CSSProperties = {
   alignSelf: "start",
   padding: 22,
   borderRadius: 24,
-  border: "1px solid rgba(255,255,255,.12)",
+  border: "1px solid rgba(255,255,255,.1)",
   background:
-    "linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035))",
+    "linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.035))",
 };
 
 const badgeLarge: React.CSSProperties = {
-  color: "#f9a8d4",
+  color: "#c4b5fd",
   fontWeight: 900,
   fontSize: 13,
 };
@@ -590,20 +537,39 @@ const badgeLarge: React.CSSProperties = {
 const detailTitle: React.CSSProperties = {
   fontSize: 32,
   lineHeight: 1.05,
+  letterSpacing: "-.04em",
 };
 
 const detailBlock: React.CSSProperties = {
   marginTop: 18,
 };
 
-const generateBtn: React.CSSProperties = {
-  marginTop: 24,
-  display: "block",
-  textAlign: "center",
-  padding: 15,
-  borderRadius: 999,
-  background: "linear-gradient(90deg,#2563eb,#a855f7,#ec4899)",
+const muted: React.CSSProperties = {
+  color: "#a1a1aa",
+  lineHeight: 1.6,
+  margin: 0,
+};
+
+const mutedSmall: React.CSSProperties = {
+  color: "#71717a",
+  fontSize: 12,
+  margin: "3px 0 0",
+};
+
+const miniBadge: React.CSSProperties = {
+  color: "#c4b5fd",
+  fontWeight: 900,
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: 1.2,
+};
+
+const showMore: React.CSSProperties = {
+  padding: 16,
+  borderRadius: 18,
+  border: "1px solid rgba(255,255,255,.1)",
+  background: "rgba(255,255,255,.06)",
   color: "#fff",
-  textDecoration: "none",
-  fontWeight: 950,
+  fontWeight: 900,
+  cursor: "pointer",
 };
