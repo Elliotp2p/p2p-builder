@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-
+<h1 style={{ color: "red" }}>NEW DEPLOY TEST</h1>
 const categories = [
   "All",
   "Food",
